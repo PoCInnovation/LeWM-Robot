@@ -1,7 +1,8 @@
-# V-JEPA 2 perception cache
+# V-JEPA 2 perception cache + BC training/demo
 
 torch>=2.3
 transformers>=4.53
 lerobot>=0.5
 safetensors>=0.4
 huggingface_hub>=0.20
+matplotlib>=3.7
