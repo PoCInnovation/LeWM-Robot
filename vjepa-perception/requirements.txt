@@ -1,0 +1,7 @@
+# V-JEPA 2 perception cache
+
+torch>=2.3
+transformers>=4.53
+lerobot>=0.5
+safetensors>=0.4
+huggingface_hub>=0.20
