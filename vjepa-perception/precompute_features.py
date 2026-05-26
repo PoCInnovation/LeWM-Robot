@@ -42,19 +42,25 @@ from encoder import FrozenVJepa2Encoder
 
 
 class _PerFrameDataset(Dataset):
-    """Thin wrapper that returns only the fields we need (stackable types)."""
+    """Thin wrapper that returns only the fields we need (stackable types).
 
-    def __init__(self, src, camera_key, state_key, action_key):
+    If frame_stride > 1, only every Nth frame of the source (by global index) is
+    surfaced. This is approximate per-episode subsampling — sufficient for smoke
+    tests and compute-frugal runs.
+    """
+
+    def __init__(self, src, camera_key, state_key, action_key, frame_stride: int = 1):
         self.src = src
         self.camera_key = camera_key
         self.state_key = state_key
         self.action_key = action_key
+        self._indices = list(range(0, len(src), frame_stride))
 
     def __len__(self):
-        return len(self.src)
+        return len(self._indices)
 
     def __getitem__(self, idx):
-        s = self.src[idx]
+        s = self.src[self._indices[idx]]
         return {
             "frame": s[self.camera_key],
             "state": torch.as_tensor(s[self.state_key], dtype=torch.float32),
@@ -83,6 +89,8 @@ def parse_args():
     p.add_argument("--num_workers", type=int, default=4)
     p.add_argument("--max_episodes", type=int, default=None,
                    help="Cap on number of episodes (useful for a smoke test).")
+    p.add_argument("--frame_stride", type=int, default=1,
+                   help="Encode only every Nth frame (approximate, global stride).")
     return p.parse_args()
 
 
@@ -113,18 +121,21 @@ def main():
     src = LeRobotDataset(args.src_repo, **src_kwargs)
 
     P = config.n_patches_per_side
-    n_frames = len(src)
+    n_frames_src = len(src)
     n_episodes = src.num_episodes
+    wrapped = _PerFrameDataset(src, args.camera_key, args.state_key, args.action_key,
+                                frame_stride=args.frame_stride)
+    n_frames = len(wrapped)
     bytes_per = P * P * config.encoder_dim * (2 if args.dtype == "float16" else 4)
-    print(f"Source:   {args.src_repo}  ({n_episodes} episodes, {n_frames} frames)")
+    print(f"Source:   {args.src_repo}  ({n_episodes} episodes, {n_frames_src} frames)")
     print(f"Encoder:  {args.vjepa2_repo}  ({P}×{P}×{config.encoder_dim} per frame)")
-    print(f"Dtype:    {args.dtype}  →  ~{bytes_per * n_frames / 1e9:.1f} GB total")
+    print(f"Stride:   {args.frame_stride}  →  encoding {n_frames} frames")
+    print(f"Dtype:    {args.dtype}  →  ~{bytes_per * n_frames / 1e9:.2f} GB total")
     print(f"Output:   {dst}")
     print()
-
-    wrapped = _PerFrameDataset(src, args.camera_key, args.state_key, args.action_key)
     dl = DataLoader(wrapped, batch_size=args.batch_size, shuffle=False,
                     num_workers=args.num_workers, pin_memory=True)
+    # Note: 'frames' here means the encoded subset (after frame_stride).
 
     # ---- Encode & flush per episode ----
     current_ep = -1
@@ -190,6 +201,7 @@ def main():
         "n_patches_per_side": P,
         "feature_shape_per_frame": [P, P, config.encoder_dim],
         "dtype": args.dtype,
+        "frame_stride": args.frame_stride,
         "source_fps": float(src.fps) if hasattr(src, "fps") else None,
         "num_episodes": len(episode_lengths),
         "num_frames": n_done,
