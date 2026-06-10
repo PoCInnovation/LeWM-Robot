@@ -49,20 +49,48 @@ class _PerFrameDataset(Dataset):
     tests and compute-frugal runs.
     """
 
-    def __init__(self, src, camera_key, state_key, action_key, frame_stride: int = 1):
+    def __init__(self, src, camera_key, state_key, action_key, frame_stride: int = 1, temporal: bool = True):
         self.src = src
         self.camera_key = camera_key
         self.state_key = state_key
         self.action_key = action_key
+        self.temporal = temporal
         self._indices = list(range(0, len(src), frame_stride))
+        self._cache = {}  # Lightweight cache to prevent double-loading images on consecutive index queries
+
+    def _get_sample(self, global_idx: int):
+        if global_idx not in self._cache:
+            # Keep cache extremely small to prevent memory accumulation
+            if len(self._cache) >= 4:
+                self._cache.clear()
+            self._cache[global_idx] = self.src[global_idx]
+        return self._cache[global_idx]
 
     def __len__(self):
         return len(self._indices)
 
     def __getitem__(self, idx):
-        s = self.src[self._indices[idx]]
+        global_idx = self._indices[idx]
+        s = self._get_sample(global_idx)
+
+        if self.temporal:
+            # Pair frame t with frame t+1 if they belong to the same episode
+            next_idx = global_idx + 1
+            if next_idx < len(self.src):
+                s_next = self._get_sample(next_idx)
+                if s_next["episode_index"] == s["episode_index"]:
+                    frame_next = s_next[self.camera_key]
+                else:
+                    frame_next = s[self.camera_key]
+            else:
+                frame_next = s[self.camera_key]
+            frame_clip = torch.stack([s[self.camera_key], frame_next], dim=0)  # (2, C, H, W)
+        else:
+            # Fallback to duplicating the current frame
+            frame_clip = torch.stack([s[self.camera_key], s[self.camera_key]], dim=0)  # (2, C, H, W)
+
         return {
-            "frame": s[self.camera_key],
+            "frame": frame_clip,
             "state": torch.as_tensor(s[self.state_key], dtype=torch.float32),
             "action": torch.as_tensor(s[self.action_key], dtype=torch.float32),
             "episode_index": torch.as_tensor(s["episode_index"], dtype=torch.int64),
@@ -91,6 +119,8 @@ def parse_args():
                    help="Cap on number of episodes (useful for a smoke test).")
     p.add_argument("--frame_stride", type=int, default=1,
                    help="Encode only every Nth frame (approximate, global stride).")
+    p.add_argument("--no_temporal", action="store_true",
+                   help="Disable true temporal encoding and fall back to classic frame duplication.")
     return p.parse_args()
 
 
@@ -106,13 +136,15 @@ def main():
         "bfloat16": torch.bfloat16,
     }[args.dtype]
 
+    temporal = not args.no_temporal
+
     # ---- Encoder ----
-    config = VJepa2EncoderConfig(vjepa2_hf_repo=args.vjepa2_repo)
+    config = VJepa2EncoderConfig(vjepa2_hf_repo=args.vjepa2_repo, temporal_encoding=temporal)
     encoder = FrozenVJepa2Encoder(config).to(device).eval()
 
     proc = AutoVideoProcessor.from_pretrained(args.vjepa2_repo)
-    mean = torch.tensor(proc.image_mean, device=device, dtype=torch.float32).view(1, -1, 1, 1)
-    std = torch.tensor(proc.image_std, device=device, dtype=torch.float32).view(1, -1, 1, 1)
+    mean = torch.tensor(proc.image_mean, device=device, dtype=torch.float32).view(1, 1, -1, 1, 1)
+    std = torch.tensor(proc.image_std, device=device, dtype=torch.float32).view(1, 1, -1, 1, 1)
 
     # ---- Source dataset ----
     src_kwargs = {}
@@ -124,11 +156,12 @@ def main():
     n_frames_src = len(src)
     n_episodes = src.num_episodes
     wrapped = _PerFrameDataset(src, args.camera_key, args.state_key, args.action_key,
-                                frame_stride=args.frame_stride)
+                                frame_stride=args.frame_stride, temporal=temporal)
     n_frames = len(wrapped)
     bytes_per = P * P * config.encoder_dim * (2 if args.dtype == "float16" else 4)
     print(f"Source:   {args.src_repo}  ({n_episodes} episodes, {n_frames_src} frames)")
     print(f"Encoder:  {args.vjepa2_repo}  ({P}×{P}×{config.encoder_dim} per frame)")
+    print(f"Temporal: {temporal}")
     print(f"Stride:   {args.frame_stride}  →  encoding {n_frames} frames")
     print(f"Dtype:    {args.dtype}  →  ~{bytes_per * n_frames / 1e9:.2f} GB total")
     print(f"Output:   {dst}")
@@ -166,7 +199,7 @@ def main():
         frames = (frames - mean) / std
 
         with torch.no_grad():
-            feats = encoder(frames.unsqueeze(1)).squeeze(1)  # (B, P, P, D)
+            feats = encoder(frames, temporal=temporal).squeeze(1)  # (B, P, P, D)
         feats_cpu = feats.cpu().to(out_dtype)
 
         eps = batch["episode_index"]

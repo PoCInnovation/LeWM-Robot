@@ -1,7 +1,7 @@
 """V-JEPA 2 frame-prediction demo via nearest-neighbor retrieval.
 
 For a held-out validation episode, pick several timesteps t. For each:
-  1. Predict mean-pooled features at t+H from frame_t features.
+  1. Predict mean-pooled features at t+H from frame_t features and future actions.
   2. Cosine-similarity search across the training-set feature pool.
   3. Display [input frame_t | true frame_{t+H} | nearest-neighbor frame].
 
@@ -49,10 +49,14 @@ def mean_pool(features: torch.Tensor) -> torch.Tensor:
 def load_episode(cache_dir: Path, ep: int):
     path = cache_dir / f"episode_{ep:06d}.safetensors"
     with safe_open(path, framework="pt") as f:
-        return {
+        data = {
             "features": f.get_tensor("features"),
             "frame_indices": f.get_tensor("frame_indices"),
         }
+        # Lazily load actions if they are present
+        if "actions" in f.keys():
+            data["actions"] = f.get_tensor("actions")
+        return data
 
 
 def build_train_pool(cache_dir: Path, train_eps: list[int]):
@@ -100,14 +104,21 @@ def main():
     all_eps = sorted(int(k) for k in meta["episode_lengths"].keys())
 
     ckpt = torch.load(args.checkpoint, map_location=args.device, weights_only=False)
-    horizon = ckpt["horizon"]
+    
+    # Retrieve action conditioning configuration from checkpoint metadata
+    action_dim = ckpt.get("action_dim", None)
+    horizon = ckpt.get("horizon", ckpt["horizon"])
+    use_actions = action_dim is not None
+    
     val_eps = ckpt.get("val_episodes", [all_eps[-1]])
     train_eps = [ep for ep in all_eps if ep not in set(val_eps)]
     val_ep = val_eps[0]
-    print(f"horizon={horizon}  train episodes={train_eps}  val episode={val_ep}")
+    print(f"horizon={horizon}  action_dim={action_dim}  train episodes={train_eps}  val episode={val_ep}")
 
     predictor = FutureFeaturePredictor(
         encoder_dim=ckpt["encoder_dim"],
+        action_dim=action_dim,
+        horizon=horizon,
         hidden_dim=ckpt["hidden_dim"],
     ).to(args.device)
     predictor.load_state_dict(ckpt["model_state"])
@@ -142,7 +153,15 @@ def main():
     for row, t in enumerate(timesteps):
         with torch.no_grad():
             now = val_features[t : t + 1].to(args.device)  # (1, P, P, D)
-            pred = predictor(now)                          # (1, D)
+            
+            # Slice validation episode action sequence: from t to t+horizon-1
+            if use_actions:
+                val_actions = val_data["actions"]
+                actions_seq = val_actions[t : t + horizon].unsqueeze(0).to(args.device)  # (1, horizon, action_dim)
+            else:
+                actions_seq = None
+                
+            pred = predictor(now, actions=actions_seq)     # (1, D)
             pred_n = F.normalize(pred, dim=-1)
             sims = (pred_n @ pool_feats_n.T).squeeze(0)    # (N,)
             best = int(sims.argmax().item())
@@ -164,8 +183,8 @@ def main():
                                 fontsize=9)
 
     fig.suptitle(
-        f"V-JEPA 2 frozen features → learned future predictor → NN retrieval  "
-        f"(horizon={horizon} cache steps, val episode {val_ep})",
+        f"V-JEPA 2 frozen features + actions → learned future predictor → NN retrieval\n"
+        f"(horizon={horizon} cache steps, action_dim={action_dim}, val episode {val_ep})",
         fontsize=11,
     )
     fig.tight_layout()

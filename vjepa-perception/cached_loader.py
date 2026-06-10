@@ -52,6 +52,7 @@ class CachedVJepa2Dataset(Dataset):
             self.metadata = json.load(f)
         self.clip_length = clip_length
         self.stride = stride
+        self._handles = {}  # Lazily cached safe_open file handles (worker-safe)
 
         # Frames spanned by one clip in the cache (at native fps).
         self._clip_span = (clip_length - 1) * stride + 1
@@ -80,11 +81,15 @@ class CachedVJepa2Dataset(Dataset):
         path, ep_idx, start = self._index[idx]
         end = start + self._clip_span
         sl = slice(start, end, self.stride)
-        with safe_open(path, framework="pt") as f:
-            features = f.get_slice("features")[sl]
-            states = f.get_slice("states")[sl]
-            actions = f.get_slice("actions")[sl]
-            frame_indices = f.get_slice("frame_indices")[sl]
+        
+        if path not in self._handles:
+            self._handles[path] = safe_open(path, framework="pt")
+            
+        f = self._handles[path]
+        features = f.get_slice("features")[sl]
+        states = f.get_slice("states")[sl]
+        actions = f.get_slice("actions")[sl]
+        frame_indices = f.get_slice("frame_indices")[sl]
         return {
             "features": features,
             "states": states,

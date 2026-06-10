@@ -22,6 +22,7 @@ class VJepa2EncoderConfig:
     patch_size: int = 16
     image_size: int = 256
     encoder_chunk_size: int = 256       # max frames per encoder forward (memory cap)
+    temporal_encoding: bool = True      # true temporal encoding by default
 
     @property
     def n_patches_per_side(self) -> int:

@@ -4,6 +4,10 @@ Builds (frame_t, frame_{t+horizon}) pairs by reading length-(horizon+1) clips
 from the cache, training an MLP to predict the future frame's mean-pooled
 features from the current frame's patch features.
 
+Can run in:
+  1. Active mode (default): Conditioned on the sequence of future actions leading to the future frame.
+  2. Passive mode (via --no_actions): Standard baseline predicting future features without action conditioning.
+
 Usage:
     python train_predictor.py \\
         --cache_dir /content/cached_features/libero_object \\
@@ -38,6 +42,8 @@ def parse_args():
     p.add_argument("--weight_decay", type=float, default=1e-4)
     p.add_argument("--num_workers", type=int, default=2)
     p.add_argument("--hidden_dim", type=int, default=512)
+    p.add_argument("--no_actions", action="store_true",
+                   help="Disable action conditioning (train passive baseline predictor).")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
@@ -73,12 +79,22 @@ def main():
         meta = json.load(f)
     encoder_dim = meta["encoder_dim"]
 
+    # Establish full sliding-window dataset
     full_ds = CachedVJepa2Dataset(cache_dir, clip_length=args.horizon + 1, stride=1)
+    
+    # Dynamically extract action dimensions
+    sample = full_ds[0]
+    action_dim = sample["actions"].shape[-1]
+    
     train_idx, val_idx, val_eps = split_indices_by_episode(full_ds, args.val_episodes)
     train_ds = Subset(full_ds, train_idx)
     val_ds = Subset(full_ds, val_idx)
 
-    print(f"encoder_dim={encoder_dim}  horizon={args.horizon}")
+    use_actions = not args.no_actions
+    pred_action_dim = action_dim if use_actions else None
+    pred_horizon = args.horizon if use_actions else None
+
+    print(f"encoder_dim={encoder_dim}  action_dim={pred_action_dim}  horizon={pred_horizon}")
     print(f"total clips={len(full_ds)}  episodes={meta['num_episodes']}")
     print(f"train clips={len(train_ds)}  val clips={len(val_ds)}  (val episodes={val_eps})")
     if len(train_ds) == 0 or len(val_ds) == 0:
@@ -94,7 +110,10 @@ def main():
 
     device = torch.device(args.device)
     predictor = FutureFeaturePredictor(
-        encoder_dim=encoder_dim, hidden_dim=args.hidden_dim,
+        encoder_dim=encoder_dim,
+        action_dim=pred_action_dim,
+        horizon=pred_horizon,
+        hidden_dim=args.hidden_dim,
     ).to(device)
     print(f"predictor params: {sum(p.numel() for p in predictor.parameters()) / 1e6:.2f}M")
 
@@ -120,7 +139,11 @@ def main():
             feats = batch["features"].to(device)        # (B, H+1, P, P, D)
             now = feats[:, 0]                            # (B, P, P, D)
             target = mean_pool(feats[:, -1])             # (B, D)
-            pred = predictor(now)
+            
+            # Extract action sequence: from t to t+horizon-1
+            actions = batch["actions"][:, :args.horizon].to(device) if use_actions else None
+            
+            pred = predictor(now, actions=actions)
             loss = loss_fn(pred, target)
             opt.zero_grad()
             loss.backward()
@@ -135,7 +158,11 @@ def main():
                 feats = batch["features"].to(device)
                 now = feats[:, 0]
                 target = mean_pool(feats[:, -1])
-                val_losses.append(loss_fn(predictor(now), target).item())
+                
+                # Extract action sequence
+                actions = batch["actions"][:, :args.horizon].to(device) if use_actions else None
+                
+                val_losses.append(loss_fn(predictor(now, actions=actions), target).item())
         val_mse = sum(val_losses) / len(val_losses)
 
         improved = val_mse < best_val
@@ -146,7 +173,8 @@ def main():
                 "args": vars(args),
                 "encoder_dim": encoder_dim,
                 "hidden_dim": args.hidden_dim,
-                "horizon": args.horizon,
+                "action_dim": pred_action_dim,
+                "horizon": pred_horizon,
                 "epoch": epoch,
                 "val_mse": val_mse,
                 "val_episodes": val_eps,
