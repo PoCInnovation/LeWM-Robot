@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Environments
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# PyTorch / ML artifacts
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+
+# Dataset cache (HuggingFace, LeRobot)
+.cache/
+~/.cache/huggingface/
+*.h5
+*.hdf5
+
+# Results (lourds, peuvent être regénérés)
+results/encoded/
+results/checkpoints/
+results/wandb/
+results/*.png       # ! enlever cette ligne si tu veux versionner les plots
+results/*.svg
+results/*.json
+!results/.gitkeep
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_meta
+
+# Logs
+*.log
+logs/
+runs/
+
+# Temp
+*.tmp
+*~
