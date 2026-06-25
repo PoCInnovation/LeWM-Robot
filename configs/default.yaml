@@ -1,0 +1,47 @@
+# ═══════════════════════════════════════════════════════════════
+# Configuration par défaut du projet WM-LeRobot
+# ═══════════════════════════════════════════════════════════════
+# Surchargeable via CLI : python script.py --config configs/custom.yaml
+
+# Configuration de l'encodeur (DINOv3 ou DINOv2)
+encoder:
+  family: "dinov3"                      # "dinov3" (Meta, validé) / "dinov2" (public fallback)
+  size: "small"                         # "small" (21M) / "base" (86M) / "large" (300M) / "giant" (1.1B)
+  image_size: 224
+  dtype: "float32"                      # "float32" / "float16" / "bfloat16"
+
+# Configuration du dataset LeRobot HuggingFace
+dataset:
+  hf_id: "divisio74/duck_dataset_v3"
+  wrist_key:   "observation.images.wrist"
+  global_key:  "observation.images.front"  # ton dataset utilise "front", pas "global"
+  action_key:  "action"
+  proprio_key: "observation.state"
+  delta_timesteps: 1
+  cache_dir: null                       # null = défaut HF
+  val_fraction: 0.2
+
+# Configuration des fusions à tester ( pour le cross cam)
+fusion:
+  strategies_to_test:
+    - "concat"
+    - "concat_view"
+    - "cross_attn_bd"
+    - "late_cls"
+
+# Configuration entraînement du probe (Milestone 1)
+probe:
+  n_epochs: 30
+  batch_size: 32
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  hidden_dim: 512
+
+# Reproductibilité
+seed: 42
+
+# Paths (relatifs au root du repo)
+paths:
+  encoded_data: "results/encoded/encoded_data.pt"
+  fusion_results: "results/fusion_comparison.json"
+  fusion_plot: "results/fusion_comparison.png"
