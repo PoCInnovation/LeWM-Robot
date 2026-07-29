@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "wheel", "toml"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sim_to_real_so101"
+version = "0.1.0"
+description = "How to Simulate, Train, Validate, and Deploy an End-to-End Robotics Workflow With NVIDIA Isaac - Workshop codebase"
+authors = [
+    { name="Lior Ben Horin", email="liorbenhorin@gmail.com" },
+    { name="Shane Reetz", email="sreetz@nvidia.com" },
+    { name="Maximilian Ofir", email="maxofir@nvidia.com" },
+    { name="Zhijin Li", email="zhijinl@nvidia.com" }
+]
+requires-python = ">=3.11"
+
+[project.scripts]
+list_envs = "sim_to_real_so101.scripts.list_envs:main"
+zero_agent = "sim_to_real_so101.scripts.zero_agent:main"
+random_agent = "sim_to_real_so101.scripts.random_agent:main"
+lerobot_agent = "sim_to_real_so101.scripts.lerobot_agent:main"
+lerobot_eval = "sim_to_real_so101.scripts.lerobot_eval:main"
+lerobot_push_dataset = "sim_to_real_so101.scripts.lerobot_push_dataset:main"

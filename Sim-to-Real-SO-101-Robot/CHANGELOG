@@ -1,0 +1,87 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## 29-11-25 /1
+
+## Changed
+- Update readme for new recording functions
+- Remove unused code
+- Combined the two example tasks into a single folder
+
+
+## 28-11-25 /1
+
+## Changed
+- Update install method for Isaac Sim, Lab and Lerobot
+
+## 31-10-25 /1
+
+# Added
+- Policy evaluation in the sim!
+
+# Changed
+- Refactor of lerobot_interface to handle sim to real logics inside
+
+
+## 2025-10-25 /1
+
+### Changed
+- Upgrade to support lerobot 0.4.0
+- Installation steps are now tricky due to confilicting dependencies
+
+## Added
+- List Isaac Sim, Lab and lerobot supported versions
+
+
+## 2025-10-24 /1
+
+### Added
+- Option to cancel recording 
+- Asynchronous episode saving
+
+## 2025-10-19 /1
+
+### Added
+- multi Camera support
+- option to set robot main color
+
+### Changed
+- significant refactor to simplify task creation and scalability
+- increased realisim by adding depth-of-field and better room asset
+
+### Removed
+- removed camera prim from the SO-ARM101-USD asset, it will be spawned during simulation
+
+## 2025-10-13 / 1
+
+### Fixed
+- initiating camera using `env.unwrapped`
+
+## 2025-10-09 / 1
+
+### Fixed
+- scripts/list_envs.py error `ModuleNotFoundError: No module named 'omni.appwindow'`
+- sim crash when following the quickstart without specifying `repo_id` and `repo_root`
+- gracefully exit if dataset folder exists but is not initialized correctly
+- spelling
+
+## 2025-10-08 / 1
+
+### Changed
+- Better randomization code for the rings and pole
+
+## 2025-10-06 / 1
+
+### Added
+- CHANGELOG
+- Method to upload dataset to HuggingFace Hub
+
+### Changed
+- Recording is now saved as video to reduce storage size and for compatibility
+- Camera is created dynamically and using a lens distortion model and parameters that are more similar to the 2MP Camera that is shipped with the robot
+
+
+### Dependencies
+- lerobot[feetech]==0.3.3
+- ffmpeg=7.1.1

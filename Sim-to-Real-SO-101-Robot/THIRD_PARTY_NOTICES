@@ -1,0 +1,157 @@
+THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
+
+This project incorporates components from the projects listed below.
+The original copyright notices and the licenses under which NVIDIA
+received such components are set forth below for informational
+purposes. NVIDIA licenses this project to you under the Apache-2.0
+License, except that components licensed below are licensed to you
+under their original terms.
+
+
+Copyright Hugging Face, Inc. (lerobot, datasets, diffusers, huggingface-hub, accelerate) - Apache-2.0 License
+License Text(http://spdx.org/licenses/Apache-2.0)
+
+   Copyright 2020 The HuggingFace Team. All rights reserved.
+
+
+Copyright The Isaac Lab Project Developers - BSD 3-Clause License
+Attribution Statements: Code in the following files was derived from Isaac Lab:
+list_envs.py, random_agent.py, zero_agent.py, tasks/__init__.py.
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2022-2025, The Isaac Lab Project Developers
+   (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
+   All rights reserved.
+
+
+Copyright Facebook, Inc. and its affiliates (PyTorch) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2016-     Facebook, Inc            (Adam Paszke)
+   Copyright (c) 2014-     Facebook, Inc            (Soumith Chintala)
+   Copyright (c) 2011-2014 Idiap Research Institute (Ronan Collobert)
+   Copyright (c) 2012-2014 Deepmind Technologies    (Koray Kavukcuoglu)
+   Copyright (c) 2011-2012 NEC Laboratories America (Koray Kavukcuoglu)
+   Copyright (c) 2011-2013 NYU                      (Clement Farabet)
+   Copyright (c) 2006-2010 NEC Laboratories America (Ronan Collobert, Leon Bottou,
+                                                      Iain Melvin, Jason Weston)
+   Copyright (c) 2006      Idiap Research Institute (Samy Bengio)
+   Copyright (c) 2001-2004 Idiap Research Institute (Ronan Collobert, Samy Bengio,
+                                                      Johnny Mariethoz)
+   All rights reserved.
+
+
+Copyright Soumith Chintala (TorchVision) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) Soumith Chintala 2016. All rights reserved.
+
+
+Copyright Meta (TorchCodec) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright 2024 Meta.
+
+
+Copyright NumPy Developers - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2005-2025, NumPy Developers. All rights reserved.
+
+
+Copyright Brian Granger, Min Ragan-Kelley (PyZMQ) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2009-2012, Brian Granger, Min Ragan-Kelley. All rights reserved.
+
+
+Copyright Tri Dao et al. (Flash Attention) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2022, the respective contributors, as shown by the AUTHORS file.
+   All rights reserved.
+
+
+Copyright PyAV contributors (PyAV) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright retained by original committers. All rights reserved.
+
+
+Copyright Chris Liechti (pyserial) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2001-2020 Chris Liechti <cliechti@gmx.net>. All Rights Reserved.
+
+
+Copyright Infrae (lxml) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2004 Infrae. All rights reserved.
+
+
+Copyright Wouter Bolsterlee (jsonlines) - BSD 3-Clause License
+License Text(http://spdx.org/licenses/BSD-3-Clause)
+
+   Copyright (c) 2016, Wouter Bolsterlee. All rights reserved.
+
+
+Copyright imageio developers (imageio) - BSD 2-Clause License
+License Text(http://spdx.org/licenses/BSD-2-Clause)
+
+   Copyright (c) 2014-2026, imageio developers. All rights reserved.
+
+
+Copyright Weights and Biases, Inc. (wandb) - MIT License
+License Text(http://spdx.org/licenses/MIT)
+
+   Copyright (c) 2021 Weights and Biases, Inc.
+
+
+Copyright Fabrice Normandin, Elad Richardson, The Board of Trustees of the
+Leland Stanford Junior University (draccus) - MIT License
+License Text(http://spdx.org/licenses/MIT)
+
+   Copyright (c) 2019 Fabrice Normandin
+   Copyright (c) 2021 Elad Richardson
+   Copyright (c) 2022-2025 The Board of Trustees of the Leland Stanford Junior University
+
+
+Copyright Sep Dehpour (deepdiff) - MIT License
+License Text(http://spdx.org/licenses/MIT)
+
+   Copyright (c) 2014 - 2026 Sep Dehpour (Seperman) and contributors.
+
+
+Copyright Rerun Technologies AB (rerun-sdk) - MIT License / Apache-2.0 (dual-licensed)
+Attribution Statements: NVIDIA actively chooses the MIT license to apply to this dependency.
+License Text(http://spdx.org/licenses/MIT)
+
+   Copyright (c) 2022 Rerun Technologies AB <hello@rerun.io>
+
+
+Copyright Adam Software (FEETECH Servo Python SDK) - The Unlicense
+License Text(http://spdx.org/licenses/Unlicense)
+
+   This is free and unencumbered software released into the public domain.
+   For more information, please refer to <http://unlicense.org/>
+
+
+Copyright Moses Palmer (pynput) - LGPLv3 License
+License Text(http://spdx.org/licenses/LGPL-3.0-only)
+
+   Copyright (c) Moses Palmer.
+   Full license text available at https://www.gnu.org/licenses/lgpl-3.0.html
+
+
+Copyright scikit-build contributors (cmake, ninja Python distributions) - Apache-2.0 License
+License Text(http://spdx.org/licenses/Apache-2.0)
+
+   Copyright (c) scikit-build contributors.
+
+
+Copyright Donald Stufft and individual contributors (packaging) - Apache-2.0 / BSD-2-Clause (dual-licensed)
+Attribution Statements: NVIDIA actively chooses the Apache-2.0 license to apply to this dependency.
+License Text(http://spdx.org/licenses/Apache-2.0)
+
+   Copyright (c) Donald Stufft and individual contributors.
