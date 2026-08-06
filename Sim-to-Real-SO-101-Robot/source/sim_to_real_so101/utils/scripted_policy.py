@@ -26,11 +26,13 @@ DEFAULT_POSE = {
 }
 
 # --- IK tuning (mirrors keyboard_ee_control) ---------------------------
+REFERENCE_HZ = 60.0
+
 IK_DAMPING = 0.05
-DQ_MAX = 0.05
-POS_SPEED = 0.004      # meters per frame the target advances toward a waypoint
-ANG_SPEED = 0.04       # radians per frame for the return-home motion
-HOME_MAX_FRAMES = 200  # force the home state to finish after this many frames
+DQ_MAX_RATE = 0.05 * REFERENCE_HZ       # rad/s of joint motion per IK step
+POS_SPEED_RATE = 0.004 * REFERENCE_HZ   # m/s the target advances toward a waypoint
+ANG_SPEED_RATE = 0.04 * REFERENCE_HZ    # rad/s for the return-home motion
+HOME_MAX_S = 200 / REFERENCE_HZ         # force the home state to finish after this
 
 # --- Task tuning (EXPECT to fine-tune these visually) ------------------
 # The control point is the GRASP POINT (between the fingers), computed as the
@@ -51,8 +53,8 @@ JAW_CLOSED = -0.35        # jaw target (rad) when closed on the cube
 GRASP_TILT = 1.55         # wrist-pitch "sum" held during the task
 
 POS_TOL = 0.012           # position tolerance to consider a waypoint reached (m)
-GRIPPER_FRAMES = 25       # frames to hold while the gripper opens/closes
-STATE_TIMEOUT = 400       # max frames per motion state before declaring failure
+GRIPPER_HOLD_S = 25 / REFERENCE_HZ   # time to hold while the gripper opens/closes
+STATE_TIMEOUT_S = 400 / REFERENCE_HZ  # max time per motion state before failure
 
 
 class ScriptedPickPlace:
@@ -67,6 +69,14 @@ class ScriptedPickPlace:
         self._pick_object = pick_object
         self._place_object = place_object  # read live so placing follows the box
         self._place_at = tuple(place_at)   # fallback if the box object is absent
+
+        self._dt = float(getattr(env, "step_dt", None) or 1.0 / REFERENCE_HZ)
+        self._pos_speed = POS_SPEED_RATE * self._dt
+        self._ang_speed = ANG_SPEED_RATE * self._dt
+        self._dq_max = DQ_MAX_RATE * self._dt
+        self._gripper_frames = max(1, round(GRIPPER_HOLD_S / self._dt))
+        self._state_timeout = max(1, round(STATE_TIMEOUT_S / self._dt))
+        self._home_max_frames = max(1, round(HOME_MAX_S / self._dt))
 
         self._arm_ids = robot.find_joints(
             ["Rotation", "Pitch", "Elbow"], preserve_order=True
@@ -286,7 +296,7 @@ class ScriptedPickPlace:
 
         if kind == "gripper":
             self._jaw_target = float(payload)
-            if self._timer >= GRIPPER_FRAMES:
+            if self._timer >= self._gripper_frames:
                 advance = True
 
         elif kind == "home":
@@ -296,13 +306,13 @@ class ScriptedPickPlace:
             cur = [float(joint_pos[i]) for i in self._out_ids]
             for i, (c, h) in enumerate(zip(cur, self._home)):
                 d = h - c
-                if abs(d) > ANG_SPEED:
+                if abs(d) > self._ang_speed:
                     done = False
-                    c = c + ANG_SPEED * (1.0 if d > 0 else -1.0)
+                    c = c + self._ang_speed * (1.0 if d > 0 else -1.0)
                 else:
                     c = h
                 targets.append(self._clamp(c, self._out_ids[i]))
-            if done or self._timer >= HOME_MAX_FRAMES:
+            if done or self._timer >= self._home_max_frames:
                 self.status = "done"
             return targets
 
@@ -314,8 +324,8 @@ class ScriptedPickPlace:
             # Move the virtual target toward the goal at bounded speed.
             delta = goal - self._target_pos
             dist = float(torch.linalg.norm(delta))
-            if dist > POS_SPEED:
-                self._target_pos = self._target_pos + delta * (POS_SPEED / dist)
+            if dist > self._pos_speed:
+                self._target_pos = self._target_pos + delta * (self._pos_speed / dist)
             else:
                 self._target_pos = goal
             # Safety floor: never command the target into the table.
@@ -330,7 +340,7 @@ class ScriptedPickPlace:
                 advance = True
 
         # Timeout safety on motion states.
-        if self._timer >= STATE_TIMEOUT and kind != "gripper":
+        if self._timer >= self._state_timeout and kind != "gripper":
             self.status = "failed"
 
         # --- IK toward self._target_pos (arm) --------------------------
@@ -338,7 +348,7 @@ class ScriptedPickPlace:
         j_pos = jac[0:3][:, self._arm_ids]
         jjt = j_pos @ j_pos.T + (IK_DAMPING ** 2) * self._eye3
         dq = j_pos.T @ torch.linalg.solve(jjt, delta)
-        dq = torch.clamp(dq, -DQ_MAX, DQ_MAX)
+        dq = torch.clamp(dq, -self._dq_max, self._dq_max)
         q_arm = joint_pos[self._arm_ids] + dq
 
         q_rotation = self._clamp(float(q_arm[0]), self._arm_ids[0])

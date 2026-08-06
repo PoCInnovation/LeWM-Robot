@@ -262,3 +262,14 @@ tests/
 real_robot/core
 
 docker/env
+# Projet LeWM-Robot : le harness de test CPU doit etre versionne — c'est par lui
+# que les modifs sont validees avant d'etre envoyees a la machine qui a le GPU.
+# (annule la regle "tests/" heritee du workshop NVIDIA plus haut)
+!tests/
+
+# Sortie de run_probe.sh. Le dossier outputs/ est exclu plus haut ; on le
+# re-inclut juste assez pour versionner le rapport de calibration, que la suite
+# de tests lit (tests/calibration.py). Journal et archive restent exclus.
+!outputs/
+outputs/*
+!outputs/isaac_probe.json

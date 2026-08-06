@@ -159,7 +159,7 @@ class SO101TeleopEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self) -> None:
         """Post initialization."""
         # general settings
-        self.decimation = 2
+        self.decimation = 4
         self.episode_length_s = 5
 
         self.scene.num_envs = 1  # Always 1 env for teleoperation

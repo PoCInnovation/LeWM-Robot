@@ -15,9 +15,11 @@ authors = [
 requires-python = ">=3.11"
 
 [project.scripts]
+isaac_probe = "sim_to_real_so101.scripts.isaac_probe:main"
 list_envs = "sim_to_real_so101.scripts.list_envs:main"
 zero_agent = "sim_to_real_so101.scripts.zero_agent:main"
 random_agent = "sim_to_real_so101.scripts.random_agent:main"
 lerobot_agent = "sim_to_real_so101.scripts.lerobot_agent:main"
 lerobot_eval = "sim_to_real_so101.scripts.lerobot_eval:main"
 lerobot_push_dataset = "sim_to_real_so101.scripts.lerobot_push_dataset:main"
+validate_scenes = "sim_to_real_so101.utils.scene_validation:main"

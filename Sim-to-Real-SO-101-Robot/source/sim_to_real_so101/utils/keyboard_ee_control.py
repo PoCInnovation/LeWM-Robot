@@ -6,16 +6,19 @@ import torch
 
 JOINT_ORDER = ["Rotation", "Pitch", "Elbow", "Wrist_Pitch", "Wrist_Roll", "Jaw"]
 
-POS_STEP = 0.002
-ANG_STEP = 0.015
-JAW_STEP = 0.015
+REFERENCE_HZ = 60.0
+
+POS_RATE = 0.002 * REFERENCE_HZ
+ANG_RATE = 0.015 * REFERENCE_HZ
+JAW_RATE = 0.015 * REFERENCE_HZ
+DQ_MAX_RATE = 0.05 * REFERENCE_HZ
+HOME_RATE = 0.01 * REFERENCE_HZ
+HOME_MIN_S = 30 / REFERENCE_HZ
+
 LEASH = 0.06
 IK_DAMPING = 0.05
-DQ_MAX = 0.05
 
 HOME_KEY = "H"
-HOME_SPEED = 0.01
-HOME_MIN_FRAMES = 30
 
 MOVE_BINDINGS = {
     "UP": (0, +1.0),
@@ -49,6 +52,14 @@ class KeyboardEEControl:
         robot = env.scene["robot"]
         self._robot = robot
         self._device = robot.device
+
+        self._dt = float(getattr(env, "step_dt", None) or 1.0 / REFERENCE_HZ)
+        self._pos_step = POS_RATE * self._dt
+        self._ang_step = ANG_RATE * self._dt
+        self._jaw_step = JAW_RATE * self._dt
+        self._dq_max = DQ_MAX_RATE * self._dt
+        self._home_step = HOME_RATE * self._dt
+        self._home_min_frames = max(1, round(HOME_MIN_S / self._dt))
 
         self._arm_ids = robot.find_joints(
             ["Rotation", "Pitch", "Elbow"], preserve_order=True
@@ -150,7 +161,7 @@ class KeyboardEEControl:
                 max_delta = max(
                     abs(h - s) for h, s in zip(self._home_targets, start)
                 )
-                frames = max(HOME_MIN_FRAMES, int(max_delta / HOME_SPEED))
+                frames = max(self._home_min_frames, int(max_delta / self._home_step))
                 self._homing = {"start": start, "frame": 0, "frames": frames}
                 print("[INFO]: Returning to home position...")
 
@@ -192,7 +203,7 @@ class KeyboardEEControl:
 
         for key, (axis, direction) in MOVE_BINDINGS.items():
             if key in self._held:
-                self._target_pos[axis] += direction * POS_STEP
+                self._target_pos[axis] += direction * self._pos_step
         self._target_pos[2] = torch.clamp(self._target_pos[2], min=0.0)
 
         delta = self._target_pos - ee_pos
@@ -204,7 +215,7 @@ class KeyboardEEControl:
         j_pos = jac[0:3][:, self._arm_ids]
         jjt = j_pos @ j_pos.T + (IK_DAMPING**2) * self._eye3
         dq = j_pos.T @ torch.linalg.solve(jjt, delta)
-        dq = torch.clamp(dq, -DQ_MAX, DQ_MAX)
+        dq = torch.clamp(dq, -self._dq_max, self._dq_max)
         q_arm = joint_pos[self._arm_ids] + dq
 
         q_rotation = self._clamp(float(q_arm[0]), self._arm_ids[0])
@@ -213,19 +224,19 @@ class KeyboardEEControl:
 
         for key, direction in PITCH_KEYS.items():
             if key in self._held:
-                self._pitch_sum += direction * ANG_STEP
+                self._pitch_sum += direction * self._ang_step
         q_wrist = self._pitch_sum - (s_p * q_pitch + s_e * q_elbow)
         q_wrist = self._clamp(q_wrist, self._wrist_id)
         self._pitch_sum = q_wrist + (s_p * q_pitch + s_e * q_elbow)
 
         for key, direction in ROLL_KEYS.items():
             if key in self._held:
-                self._roll_target += direction * ANG_STEP
+                self._roll_target += direction * self._ang_step
         self._roll_target = self._clamp(self._roll_target, self._roll_id)
 
         for key, direction in JAW_KEYS.items():
             if key in self._held:
-                self._jaw_target += direction * JAW_STEP
+                self._jaw_target += direction * self._jaw_step
         self._jaw_target = self._clamp(self._jaw_target, self._jaw_id)
 
         targets = [

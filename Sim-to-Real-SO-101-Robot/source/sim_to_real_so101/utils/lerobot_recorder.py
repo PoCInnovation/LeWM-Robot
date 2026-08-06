@@ -16,6 +16,7 @@ import os
 import threading
 import queue
 import subprocess
+import traceback
 
 import torch
 import numpy as np
@@ -125,6 +126,7 @@ class LeRobotRecorder:
             **self.LEADER_ACTION_FEATURES,
         }
         self.num_recorded_episodes = 0
+        self.num_failed_episodes = 0
 
         self.device = device
         self.capcity = 40 * self.fps
@@ -346,7 +348,7 @@ class LeRobotRecorder:
                 action_buffers = episode["action_buffers"]
                 observation_buffer_tensor = episode["observation_buffer_tensor"]
                 rgb_buffer_tensors = episode["rgb_buffer_tensors"]
-                
+
                 total_frames = episode["total_frames"]
 
                 for frame_index in range(total_frames):
@@ -361,22 +363,7 @@ class LeRobotRecorder:
                         frame_index,
                     )
 
-                # Save depth and RGB videos for each camera (once per episode, after processing all frames)
                 this_episode_index = self.dataset.meta.total_episodes + 1
-
-                if self.save_mp4:
-                    print(f"[INFO]: Saving mp4videos...")
-                    depth_buffer_tensors = episode["depth_buffer_tensors"]
-                    instance_id_seg_buffers_tensors = episode["instance_id_seg_buffers_tensors"]
-
-                    for camera_name in self.cameras.keys():
-                        depth_frames = depth_buffer_tensors[camera_name][:total_frames]
-                        rgb_frames = rgb_buffer_tensors[camera_name][:total_frames]
-                        instance_id_seg_frames = instance_id_seg_buffers_tensors[camera_name][:total_frames]
-
-                        self.save_depth_video(depth_frames, camera_name, this_episode_index)
-                        self.save_rgb_video(rgb_frames, camera_name, this_episode_index)
-                        self.save_instance_id_segmentation_video(instance_id_seg_frames, camera_name, this_episode_index)
 
                 self.dataset.save_episode()
                 self.dataset.finalize()
@@ -385,15 +372,52 @@ class LeRobotRecorder:
                 self.num_recorded_episodes += 1
                 print(f"[INFO]: Episode {self.num_recorded_episodes} saved.")
 
+                if self.save_mp4:
+                    self._export_mp4(episode, total_frames, this_episode_index)
+
                 if self.episode_queue.empty():
                     print(f"[INFO]: No more episodes in queue. Stopping processor thread...")
                 else:
                     print(f"[INFO]: Additional {self.episode_queue.qsize()} episodes in queue.")
 
             except Exception as e:
-                print(f"Error in async processing: {e}")
+                self.num_failed_episodes += 1
+                print(
+                    f"[ERROR]: episode LOST in async processing "
+                    f"({self.num_failed_episodes} so far): {type(e).__name__}: {e}"
+                )
+                traceback.print_exc()
             finally:
                 self.episode_queue.task_done()
+
+    def _export_mp4(self, episode, total_frames, episode_index):
+        """Write the optional mp4 videos. Depth and segmentation are only
+        present when --depth and --instance_id_seg were requested."""
+        try:
+            print("[INFO]: Saving mp4 videos...")
+            rgb_buffer_tensors = episode["rgb_buffer_tensors"]
+            depth_buffer_tensors = episode.get("depth_buffer_tensors") or {}
+            seg_buffer_tensors = episode.get("instance_id_seg_buffers_tensors") or {}
+
+            for camera_name in self.cameras.keys():
+                self.save_rgb_video(
+                    rgb_buffer_tensors[camera_name][:total_frames], camera_name, episode_index
+                )
+                if camera_name in depth_buffer_tensors:
+                    self.save_depth_video(
+                        depth_buffer_tensors[camera_name][:total_frames],
+                        camera_name,
+                        episode_index,
+                    )
+                if camera_name in seg_buffer_tensors:
+                    self.save_instance_id_segmentation_video(
+                        seg_buffer_tensors[camera_name][:total_frames],
+                        camera_name,
+                        episode_index,
+                    )
+        except Exception as e:
+            print(f"[WARNING]: mp4 export failed ({type(e).__name__}: {e}) — "
+                  "the episode itself is safely recorded")
 
     def _save_video(self, frames_rgb, camera_name, data_type, episode_index):
         """
