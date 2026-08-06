@@ -27,9 +27,10 @@ import torch
 
 JOINT_NAMES = ["Rotation", "Pitch", "Elbow", "Wrist_Pitch", "Wrist_Roll", "Jaw"]
 
-# Bodies in articulation order. Index 0 is the root, which is why the jacobian
-# array is offset by one on a fixed-base arm.
-BODY_NAMES = ["base", "shoulder", "upper_arm", "forearm", "wrist", "gripper", "jaw"]
+# Bodies in articulation order, as reported by the calibration probe on a real
+# machine. Index 0 is the root, which is why the jacobian array is offset by one
+# on a fixed-base arm.
+BODY_NAMES = ["base", "shoulder", "upper_arm", "lower_arm", "wrist", "gripper", "jaw"]
 
 # Home pose — exact, copied from SO101_CFG.init_state.joint_pos.
 DEFAULT_JOINT_POS = [-0.2736, -0.6109, -0.0745, 1.5148, -1.6034, -0.1465]
@@ -306,25 +307,57 @@ class RobotSurrogate:
         return len(self.body_names)
 
     def find_joints(self, names, preserve_order=False):
-        ids, found = [], []
-        for name in names:
-            if name in self.joint_names:
-                ids.append(self.joint_names.index(name))
-                found.append(name)
-        return ids, found
+        return self._find(names, self.joint_names, "joint")
 
     def find_bodies(self, names, preserve_order=False):
-        ids, found = [], []
+        return self._find(names, self.body_names, "body")
+
+    @staticmethod
+    def _find(names, available, kind):
+        """Name lookup with Isaac Lab's semantics.
+
+        Isaac treats the patterns as regexes and **raises** when one of them
+        matches nothing — it does not return an empty list. Reproducing that is
+        what makes the ``is None`` fallbacks in the controllers testable: with a
+        forgiving lookup they were unreachable code.
+        """
+        ids, found, missing = [], [], []
         for name in names:
-            if name in self.body_names:
-                ids.append(self.body_names.index(name))
+            if name in available:
+                ids.append(available.index(name))
                 found.append(name)
+            else:
+                missing.append(name)
+        if missing:
+            raise ValueError(
+                "Not all regular expressions are matched! Please check that the "
+                f"regular expressions are correct: \n\t{missing[0]}: []\n"
+                f"Available strings: {available}"
+            )
         return ids, found
 
     # -- Driving the surrogate ------------------------------------------ #
     def set_joint_pos(self, q):
         self._joint_pos = torch.as_tensor(q, dtype=self.dtype).clone()
         self._frames_cache = None
+
+    # -- Isaac Lab write API, enough to drive the calibration probe ------ #
+    def write_joint_state_to_sim(self, positions, velocities=None, env_ids=None):
+        values = torch.as_tensor(positions, dtype=self.dtype)
+        self.set_joint_pos(values[0] if values.ndim == 2 else values)
+        if velocities is not None:
+            velocities = torch.as_tensor(velocities, dtype=self.dtype)
+            self._joint_vel = velocities[0] if velocities.ndim == 2 else velocities
+
+    def set_joint_position_target(self, target, joint_ids=None, env_ids=None):
+        values = torch.as_tensor(target, dtype=self.dtype)
+        self._joint_target = values[0] if values.ndim == 2 else values
+
+    def write_data_to_sim(self):
+        return None
+
+    def update(self, dt):
+        return None
 
     def apply_targets(self, targets):
         """Advance one control step toward ``targets`` and clamp to the limits."""

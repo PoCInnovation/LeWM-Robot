@@ -95,26 +95,26 @@ class ScriptedPickPlace:
         self._ee_body_id = ee_body_id
         self._jac_body_id = ee_body_id - 1 if robot.is_fixed_base else ee_body_id
 
+        # find_bodies() treats its argument as a regex and raises when nothing
+        # matches, so candidates are looked up in the body list directly.
+        body_names = list(robot.data.body_names)
+
+        def first_body(candidates):
+            return next(
+                (body_names.index(name) for name in candidates if name in body_names),
+                None,
+            )
+
         # The moving-jaw body sits at the business end of the gripper, so its
         # world position is a good, measured proxy for the grasp point (no need
         # to extrapolate an unknown finger length along a tilted axis).
-        self._jaw_body_id = None
-        for cand in ["jaw", "moving_jaw", "Jaw"]:
-            ids = robot.find_bodies([cand])[0]
-            if ids:
-                self._jaw_body_id = ids[0]
-                break
+        self._jaw_body_id = first_body(["jaw", "moving_jaw", "Jaw"])
         if self._jaw_body_id is None:
             print("[WARNING]: no jaw body found - grasp point falls back to gripper body")
 
         # Wrist body: the wrist->gripper vector is the gripper's pointing axis,
         # used to push the control point out to the real fingertips.
-        self._wrist_body_id = None
-        for cand in ["wrist", "Wrist"]:
-            ids = robot.find_bodies([cand])[0]
-            if ids:
-                self._wrist_body_id = ids[0]
-                break
+        self._wrist_body_id = first_body(["wrist", "Wrist"])
 
         limits = getattr(robot.data, "soft_joint_pos_limits", None)
         if limits is None:

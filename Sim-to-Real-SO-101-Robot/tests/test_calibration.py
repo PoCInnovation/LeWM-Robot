@@ -26,19 +26,37 @@ def probe():
     return load_probe()
 
 
+def section(probe, name):
+    """Return a dump section, or skip when the probe failed to capture it.
+
+    A section can be missing because the probe hit an error there. That is
+    reported once, by ``test_the_probe_ran_without_errors``; the tests that
+    depend on the section then skip instead of failing with a KeyError, so the
+    output points at the cause rather than burying it.
+    """
+    value = probe.get(name)
+    if not value:
+        reason = (probe.get("errors") or {}).get(name, "not captured")
+        pytest.skip(f"probe has no '{name}' section ({reason})")
+    return value
+
+
 def test_the_probe_ran_without_errors(probe):
     """A partial dump still loads; say so loudly rather than testing around it."""
-    assert not probe.get("errors"), f"probe reported: {probe['errors']}"
+    errors = probe.get("errors") or {}
+    assert not errors, "the probe failed on: " + "; ".join(
+        f"{key} -> {value}" for key, value in errors.items()
+    )
 
 
 def test_joint_order_is_what_the_code_assumes(probe):
     """Action vectors map positionally onto dataset columns; order is load-bearing."""
-    assert probe["robot"]["joint_names"] == JOINT_NAMES
+    assert section(probe, "robot")["joint_names"] == JOINT_NAMES
 
 
 def test_the_bodies_the_controllers_look_up_exist(probe):
     """``scripted_policy`` silently changes behaviour when these are missing."""
-    body_names = probe["robot"]["body_names"]
+    body_names = section(probe, "robot")["body_names"]
     assert "gripper" in body_names, "the IK target body is missing"
     for optional in ("jaw", "wrist"):
         if optional not in body_names:
@@ -50,14 +68,14 @@ def test_the_bodies_the_controllers_look_up_exist(probe):
 
 def test_jacobian_indexing_convention_holds(probe):
     """Both controllers compute ``ee_body_id - 1``; confirm that is right."""
-    robot_info = probe["robot"]
+    robot_info = section(probe, "robot")
     assert robot_info["is_fixed_base"] is True
     expected = robot_info["ee_body_id"] - 1
     assert robot_info["jacobian_body_id"] == expected
 
 
 def test_home_pose_matches_the_configured_spawn(probe):
-    measured = probe["robot"]["default_joint_pos"]
+    measured = section(probe, "robot")["default_joint_pos"]
     assert measured == pytest.approx(DEFAULT_JOINT_POS, abs=1e-3)
 
 
@@ -72,7 +90,7 @@ def test_joint_limits_cover_the_motor_mapping(probe):
     interface = LeRobotSO101Interface(
         device="cpu", port="/dev/null", id="test", cameras={}, fps=30, kind="leader"
     )
-    limits = probe["robot"]["soft_joint_pos_limits"]
+    limits = section(probe, "robot")["soft_joint_pos_limits"]
     import math
 
     mismatched = []
@@ -94,15 +112,16 @@ def test_control_rate_is_the_one_the_dataset_claims(probe):
     Expected to fail until phase 2 lands ``decimation = 4``; when it does, this
     is the check that confirms it on the real machine.
     """
-    assert probe["sim"]["control_hz"] == pytest.approx(30.0, abs=0.5), (
-        f"control runs at {probe['sim']['control_hz']} Hz while the recorder "
+    control_hz = section(probe, "sim")["control_hz"]
+    assert control_hz == pytest.approx(30.0, abs=0.5), (
+        f"control runs at {control_hz} Hz while the recorder "
         "stamps the dataset at 30 fps — see decision D2"
     )
 
 
 def test_cameras_match_the_dataset_feature_shapes(probe):
     """480x640 on both, or the recorder writes a shape the real dataset lacks."""
-    cameras = probe["scene"]["cameras"]
+    cameras = section(probe, "scene")["cameras"]
     assert cameras, "no cameras found on the task"
     for name, camera in cameras.items():
         assert (camera["height"], camera["width"]) == (480, 640), f"{name}: {camera}"
@@ -110,11 +129,12 @@ def test_cameras_match_the_dataset_feature_shapes(probe):
 
 def test_surrogate_can_be_rebuilt_from_the_dump(probe):
     """The harness must actually pick the measured values up."""
+    robot_info = section(probe, "robot")
     robot = surrogate_from_probe(probe)
-    assert robot.joint_names == probe["robot"]["joint_names"]
-    assert robot.body_names == probe["robot"]["body_names"]
+    assert robot.joint_names == robot_info["joint_names"]
+    assert robot.body_names == robot_info["body_names"]
     assert robot.data.default_joint_pos[0].tolist() == pytest.approx(
-        probe["robot"]["default_joint_pos"], abs=1e-5
+        robot_info["default_joint_pos"], abs=1e-5
     )
 
 

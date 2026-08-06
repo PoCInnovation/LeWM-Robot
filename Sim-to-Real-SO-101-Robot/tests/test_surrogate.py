@@ -91,7 +91,14 @@ def test_body_lookup_matches_the_names_the_code_asks_for():
     for name in ["gripper", "jaw", "wrist", "base"]:
         ids, _ = robot.find_bodies([name])
         assert ids, f"body '{name}' missing from the surrogate"
-    assert robot.find_bodies(["does_not_exist"])[0] == []
+
+
+def test_an_unknown_body_name_raises_the_way_isaac_does():
+    robot = RobotSurrogate()
+    with pytest.raises(ValueError, match="Not all regular expressions are matched"):
+        robot.find_bodies(["does_not_exist"])
+    with pytest.raises(ValueError):
+        robot.find_joints(["NoSuchJoint"])
 
 
 def test_joint_order_matches_the_action_vector():
