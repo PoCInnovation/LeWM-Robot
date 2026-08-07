@@ -63,7 +63,8 @@ def main():
                                            ["concat", "concat_view",
                                             "cross_attn_bd", "late_cls"])
 
-    out_dir = ROOT / args.output_dir
+    out_dir = Path(args.output_dir) if Path(args.output_dir).is_absolute() \
+        else ROOT / args.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
@@ -144,11 +145,16 @@ def main():
                 print(f"  epoch {epoch + 1:3d}/{n_epochs}  "
                       f"train MAE={train_mae:.5f}  val MAE={val_mae:.5f}")
 
+        ckpt_path = out_dir / f"{name}.pt"
+        try:
+            ckpt_ref = str(ckpt_path.relative_to(ROOT))
+        except ValueError:
+            ckpt_ref = str(ckpt_path)
         results[name] = {
             "params":        n_fusion_params,
             "output_tokens": output_tokens,
             "best_val_mae":  best_val,
-            "fusion_ckpt":   str((out_dir / f"{name}.pt").relative_to(ROOT)),
+            "fusion_ckpt":   ckpt_ref,
         }
 
     # === Résumé ===
