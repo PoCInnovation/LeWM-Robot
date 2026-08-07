@@ -30,14 +30,24 @@ import torch.nn.functional as F
 
 @dataclass
 class CEMConfig:
-    """Configuration du CEM planner."""
+    """
+    Configuration du CEM planner.
+
+    IMPORTANT — espace d'actions : le predictor est entraîné sur des actions
+    NORMALISÉES (z-score). Le CEM doit échantillonner dans ce même espace :
+    action_low/high sont les bornes du dataset exprimées en espace normalisé
+    (cf. NormStats.normalized_bounds()). Elles peuvent être des scalaires ou
+    des tenseurs (action_dim,) pour des bornes par dimension.
+    Les actions retournées sont à DÉNORMALISER avant envoi au robot
+    (NormStats.denormalize).
+    """
     horizon: int = 10                   # nombre de steps planifiés
     n_samples: int = 200                # candidats par itération
     n_elites: int = 20                  # top-K à garder
     n_iterations: int = 3               # raffinements
     action_dim: int = 6                 # 6 servos SO-101
-    action_low: float = -1.0            # bornes des actions (normalisées)
-    action_high: float = 1.0
+    action_low: "float | torch.Tensor" = -1.0    # bornes (espace normalisé)
+    action_high: "float | torch.Tensor" = 1.0
     initial_std: float = 1.0
     cost_type: str = "cosine"           # "cosine" / "mse"
     elite_momentum: float = 0.0         # 0 = full refit, >0 = lisser entre iter
@@ -91,6 +101,14 @@ class CEMPlanner:
             z_goal = z_goal[0]
 
         N, D = z_current.shape
+        z_current = z_current.to(device)
+        z_goal = z_goal.to(device)
+
+        # Bornes par dimension (scalaires broadcastés ou tenseurs (action_dim,))
+        low = torch.as_tensor(cfg.action_low, dtype=torch.float32,
+                              device=device).expand(cfg.action_dim).clone()
+        high = torch.as_tensor(cfg.action_high, dtype=torch.float32,
+                               device=device).expand(cfg.action_dim).clone()
 
         # Init distribution
         mean = torch.zeros(cfg.horizon, cfg.action_dim, device=device)
@@ -103,7 +121,7 @@ class CEMPlanner:
             actions = (mean.unsqueeze(0) + std.unsqueeze(0)
                        * torch.randn(cfg.n_samples, cfg.horizon,
                                       cfg.action_dim, device=device))
-            actions = actions.clamp(cfg.action_low, cfg.action_high)
+            actions = torch.clamp(actions, min=low, max=high)
 
             # 2. Rollout en batch
             z_pred = z_current.unsqueeze(0).expand(cfg.n_samples, -1, -1).clone()

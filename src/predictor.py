@@ -29,10 +29,20 @@ class PredictorConfig:
     action_dim: int = 6                 # 6 servos SO-101
     n_layers: int = 6
     n_heads: int = 12
-    ffn_dim: int = 2048                 # 4x embed_dim typique
+    ffn_dim: Optional[int] = None       # None = 4x embed_dim
     dropout: float = 0.1
     context_length: Optional[int] = None  # si None, calcul auto
     n_action_tokens: int = 1            # nombre de tokens pour encoder l'action
+    predict_delta: bool = True          # sortie = z_t + head(trunk).
+    # Pourquoi : la LayerNorm finale renormalise chaque token → la sortie ne
+    # peut jamais coller exactement à des latents cibles NON normalisés
+    # (plancher de MSE incompressible, vérifié empiriquement). En résiduel
+    # avec une head initialisée à zéro, l'identité est exacte à l'init et le
+    # modèle n'apprend que la dynamique (le delta).
+
+    def __post_init__(self):
+        if self.ffn_dim is None:
+            self.ffn_dim = 4 * self.embed_dim
 
 
 class ActionEmbedding(nn.Module):
@@ -173,8 +183,18 @@ class WorldModelPredictor(nn.Module):
 
         self.norm = nn.LayerNorm(config.embed_dim)
 
+        # Head de sortie (mode résiduel) : z_t+1 = z_t + head(trunk)
+        self.out_head: Optional[nn.Linear] = None
+        if config.predict_delta:
+            self.out_head = nn.Linear(config.embed_dim, config.embed_dim)
+
         # Init weights
         self.apply(self._init_weights)
+
+        # Head à ZÉRO : à l'init, le predictor est exactement l'identité
+        if self.out_head is not None:
+            nn.init.zeros_(self.out_head.weight)
+            nn.init.zeros_(self.out_head.bias)
 
     def _init_weights(self, module: nn.Module):
         if isinstance(module, nn.Linear):
@@ -216,8 +236,13 @@ class WorldModelPredictor(nn.Module):
             x = block(x)
         x = self.norm(x)
 
-        # On retire les tokens d'action et on retourne uniquement les patches prédits
-        return x[:, n_act:]  # (B, N, D)
+        # On retire les tokens d'action, on ne garde que les patches
+        out = x[:, n_act:]  # (B, N, D)
+
+        if self.out_head is not None:
+            # Résiduel : le trunk prédit un DELTA ajouté au latent d'entrée
+            return z_t + self.out_head(out)
+        return out
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
