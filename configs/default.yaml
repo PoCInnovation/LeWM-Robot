@@ -5,23 +5,29 @@
 
 # Configuration de l'encodeur (DINOv3 ou DINOv2)
 encoder:
-  family: "dinov3"                      # "dinov3" (Meta, validé) / "dinov2" (public fallback)
+  family: "dinov3"                      # "dinov3" (Meta, GATED) / "dinov2" (public fallback)
   size: "small"                         # "small" (21M) / "base" (86M) / "large" (300M) / "giant" (1.1B)
   image_size: 224
-  dtype: "float32"                      # "float32" / "float16" / "bfloat16"
+  # NB : patch_size et register tokens sont lus depuis le modèle chargé
+  # (DINOv2 = patch 14 → 256 patches ; DINOv3 = patch 16 + 4 registres).
 
 # Configuration du dataset LeRobot HuggingFace
 dataset:
+  # HF repo id, OU chemin local (OBLIGATOIRE en mode offline sur cluster —
+  # lerobot ne résout pas un repo_id Hub sans réseau, même en cache)
   hf_id: "divisio74/duck_dataset_v3"
   wrist_key:   "observation.images.wrist"
-  global_key:  "observation.images.front"  # ton dataset utilise "front", pas "global"
+  global_key:  "observation.images.front"  # duck dataset : "front", pas "global"
   action_key:  "action"
   proprio_key: "observation.state"
-  delta_timesteps: 1
+  # delta par défaut pour le training (surcharge : 04 --delta N).
+  # À 30 fps, delta=1 rend "copier z_t" quasi optimal → surveiller la
+  # baseline identité dans les logs de 04/05.
+  delta_timesteps: 2
   cache_dir: null                       # null = défaut HF
-  val_fraction: 0.2
+  val_fraction: 0.2                     # split PAR ÉPISODE
 
-# Configuration des fusions à tester ( pour le cross cam)
+# Stratégies comparées par scripts/03_compare_fusion.py
 fusion:
   strategies_to_test:
     - "concat"
@@ -29,7 +35,7 @@ fusion:
     - "cross_attn_bd"
     - "late_cls"
 
-# Configuration entraînement du probe (Milestone 1)
+# Entraînement du probe (03_compare_fusion)
 probe:
   n_epochs: 30
   batch_size: 32
@@ -42,6 +48,5 @@ seed: 42
 
 # Paths (relatifs au root du repo)
 paths:
-  encoded_data: "results/encoded/encoded_data.pt"
-  fusion_results: "results/fusion_comparison.json"
-  fusion_plot: "results/fusion_comparison.png"
+  # Dossier racine des datasets encodés (le nom final inclut dataset+encodeur)
+  encoded_data: "results/encoded"
