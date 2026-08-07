@@ -62,3 +62,8 @@ runs/
 # Temp
 *.tmp
 *~
+
+# Artefacts locaux hors projet
+vjepa-perception/
+results/encoded/
+results/checkpoints/
