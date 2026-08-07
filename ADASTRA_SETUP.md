@@ -56,6 +56,62 @@ débogage.
 4. **Dataset** : par défaut `divisio74/duck_dataset_v3` (public). Si le
    dataset visé est privé, le token HF doit y donner accès.
 
+## ✅ Checklist offline complète
+
+Tout ce qui doit exister pour qu'un job tourne sans réseau. Les blocs 2 à 4
+sont **automatisés** (`run_all.sh` / `setup_offline.sh` / `env.sh`) — seul le
+bloc 1 demande une action humaine.
+
+### 1. Prérequis humains
+
+| # | Quoi | Détail |
+|---|---|---|
+| 1 | Compte Adastra actif | login CINES + mot de passe (pas de clés SSH), allocation GPU valide |
+| 2 | Token HuggingFace | token *read* créé sur huggingface.co |
+| 3 | Accès DINOv3 approuvé (si dinov3) | demande d'accès `facebook/dinov3-*` (gated Meta) — sinon fallback `ENCODER_MODEL=facebook/dinov2-base`, zéro token |
+| 4 | Chemin scratch connu | `$SCRATCHDIR` (Lustre) — tout vit là, jamais dans le home |
+| 5 | Accès au dataset | public par défaut ; si privé, le token doit y donner accès |
+
+### 2. À matérialiser sur le scratch (fait par `setup_offline.sh`, nœud de login, via proxy)
+
+| # | Quoi | Où | Pourquoi |
+|---|---|---|---|
+| 6 | Le repo (branche `adastra-test`) | clone git | tout le code durci offline |
+| 7 | Venv Python complet | `$WORK_ROOT/venv` | torch **ROCm** (index `rocm6.2` AVANT requirements.txt), transformers, lerobot≥0.5, pyav — aucun `pip install` ne doit rester dans un job |
+| 8 | Poids de l'encodeur | `$WORK_ROOT/hf_home` | `huggingface-cli download <model_id>` — le job ne peut pas télécharger |
+| 9 | Dataset en copie locale | `$WORK_ROOT/lerobot_home/<dataset>` | ⚠️ lerobot **ne résout pas un repo_id Hub en offline, même en cache** → les jobs reçoivent le **chemin local** (`DATASET_DIR`), jamais un id HF |
+
+### 3. Variables d'environnement dans chaque job (posées par `slurm/env.sh`)
+
+| # | Variable | Valeur | Rôle |
+|---|---|---|---|
+| 10 | `HF_HUB_OFFLINE` | `1` | interdit tout appel réseau HF → échec immédiat au lieu d'un timeout |
+| 11 | `TRANSFORMERS_OFFLINE` | `1` | idem côté transformers |
+| 12 | `HF_HOME` | `$WORK_ROOT/hf_home` | le job lit le cache pré-rempli |
+| 13 | `HF_LEROBOT_HOME` | `$WORK_ROOT/lerobot_home` | idem pour les datasets |
+| 14 | `OMP_NUM_THREADS` | 8 | cœurs CPU par GCD |
+
+### 4. Garde-fous logiciels (déjà dans le code, rien à faire)
+
+- `00_check_env.py --expect-offline --expect-gpu` en tête de chaque sbatch :
+  modèle en cache ? dataset lisible ? GPU visible ? bf16 OK ? répertoires
+  inscriptibles ? → exit 1 avant de gaspiller l'allocation
+- Fail-fast avec messages actionnables dans `encoders.py`/`data.py` (dit
+  quelle commande lancer sur le login node si un fichier manque)
+- Fallback pyav automatique si torchcodec n'a pas ses libs ffmpeg système
+- Smoke test (1er job de la chaîne, 45 min) : pipeline miniature complet —
+  bloque tout le reste s'il échoue
+- Resume : `--requeue` + `last.pt` → survit au walltime 24 h
+- Jamais de `--qos` (interdit par le CINES)
+
+### 5. Ce qui n'a PAS besoin de réseau une fois le setup fait
+
+- Les trainings 04/05 et l'éval `06 --from-encoded` ne lisent **que des
+  fichiers locaux** (latents pré-encodés + checkpoints) — même pas besoin du
+  modèle ni du dataset
+- Seuls 01/02/06-mode-images touchent au cache HF (modèle) et au dataset —
+  tous deux locaux après le setup
+
 ## 1. Sur le nœud de login (internet via proxy)
 
 ```bash
