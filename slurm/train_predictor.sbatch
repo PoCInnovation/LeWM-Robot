@@ -28,11 +28,17 @@ ENCODED_DIR="${ENCODED_DIR:?Passer ENCODED_DIR=<dossier latents encodés> via --
 OUTPUT_DIR="${OUTPUT_DIR:-$WORK_ROOT/checkpoints/predictor_sim}"
 TRAIN_ARGS="${TRAIN_ARGS:---fusion cross_attn_bd --delta 2 --n-epochs 100 --batch-size 64}"
 
+# Poids de fusion entraînés par le job finalize (03) : chargés + gelés si dispo
+if [ -n "${FUSION_CKPT:-}" ] && [ -f "$FUSION_CKPT" ]; then
+    TRAIN_ARGS="$TRAIN_ARGS --fusion-ckpt $FUSION_CKPT"
+    echo "[train] Fusion pré-entraînée : $FUSION_CKPT"
+fi
+
 # Latents pré-encodés uniquement : ni modèle ni dataset à vérifier
-python scripts/00_check_env.py --skip-model --skip-dataset \
+python scripts/00_check_env.py ${PY_CONFIG:+--config "$PY_CONFIG"} --skip-model --skip-dataset \
     --expect-gpu --expect-offline
 
-srun python scripts/04_train_predictor.py \
+srun python scripts/04_train_predictor.py ${PY_CONFIG:+--config "$PY_CONFIG"} \
     --encoded-data "$ENCODED_DIR" \
     --output-dir "$OUTPUT_DIR" \
     --resume \

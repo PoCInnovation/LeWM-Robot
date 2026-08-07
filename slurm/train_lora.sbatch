@@ -27,10 +27,10 @@ PREDICTOR_CKPT="${PREDICTOR_CKPT:-$WORK_ROOT/checkpoints/predictor_sim/best.pt}"
 OUTPUT_DIR="${OUTPUT_DIR:-$WORK_ROOT/checkpoints/predictor_real}"
 LORA_ARGS="${LORA_ARGS:---lora-rank 8 --n-epochs 20 --batch-size 32}"
 
-python scripts/00_check_env.py --skip-model --skip-dataset \
+python scripts/00_check_env.py ${PY_CONFIG:+--config "$PY_CONFIG"} --skip-model --skip-dataset \
     --expect-gpu --expect-offline
 
-srun python scripts/05_train_lora.py \
+srun python scripts/05_train_lora.py ${PY_CONFIG:+--config "$PY_CONFIG"} \
     --encoded-data "$ENCODED_DIR" \
     --predictor-ckpt "$PREDICTOR_CKPT" \
     --output-dir "$OUTPUT_DIR" \

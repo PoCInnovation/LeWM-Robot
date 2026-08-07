@@ -4,6 +4,44 @@ Guide complet : du nœud de login au premier training. Les nœuds de calcul
 n'ont **pas d'accès internet** : tout se pré-télécharge sur le nœud de login,
 et les jobs tournent avec `HF_HUB_OFFLINE=1` (posé par `slurm/env.sh`).
 
+## 🚀 COMMANDE UNIQUE (recommandé pour l'opérateur)
+
+Sur le **nœud de login**, depuis la racine du repo :
+
+```bash
+HF_TOKEN=hf_xxx bash run_all.sh
+```
+
+C'est tout. Le script fait le setup complet (venv ROCm, téléchargement du
+modèle et du dataset, validation offline) puis soumet la chaîne SLURM avec
+dépendances `afterok` :
+
+```
+smoke test (45 min, pipeline miniature)
+  └─ afterok → encodage (array 16 GCD)
+       └─ afterok → merge + comparaison des fusions
+            └─ afterok → training predictor (24 h, resume auto)
+```
+
+**Si une étape échoue, les suivantes ne partent jamais** — aucun risque de
+brûler l'allocation sur un pipeline cassé. Suivi : `squeue --me` et
+`tail -f logs/*.out`.
+
+Variantes utiles :
+```bash
+# Sans accès DINOv3 approuvé (fallback public, aucun token requis) :
+ENCODER_MODEL=facebook/dinov2-base bash run_all.sh
+
+# Voir ce qui serait soumis sans rien soumettre :
+DRY_RUN=1 bash run_all.sh
+
+# Relancer la chaîne sans refaire le setup :
+SKIP_SETUP=1 bash run_all.sh
+```
+
+Le reste de ce document détaille chaque étape pour un usage manuel ou du
+débogage.
+
 ## ⚠️ ACTIONS UTILISATEUR REQUISES (avant tout)
 
 1. **Accès DINOv3 (gated)** : sur huggingface.co, demander l'accès aux

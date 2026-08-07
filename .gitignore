@@ -67,3 +67,4 @@ runs/
 vjepa-perception/
 results/encoded/
 results/checkpoints/
+configs/run_all.yaml

@@ -20,7 +20,7 @@
 #       [--array=0-N-1] slurm/encode_array.sbatch
 #
 # Puis, quand l'array est terminé, le merge (léger, frontal ou job court) :
-#   python scripts/02_encode_dataset.py --output $ENCODED_DIR --finalize
+#   python scripts/02_encode_dataset.py ${PY_CONFIG:+--config "$PY_CONFIG"} --output $ENCODED_DIR --finalize
 
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
@@ -32,10 +32,10 @@ NUM_SHARDS=$(( SLURM_ARRAY_TASK_MAX - SLURM_ARRAY_TASK_MIN + 1 ))
 ENCODED_DIR="${ENCODED_DIR:-$WORK_ROOT/encoded/$(basename "$DATASET_DIR")}"
 
 # Validation avant travail (échoue vite si un prérequis manque)
-python scripts/00_check_env.py --dataset-id "$DATASET_DIR" \
+python scripts/00_check_env.py ${PY_CONFIG:+--config "$PY_CONFIG"} --dataset-id "$DATASET_DIR" \
     --expect-gpu --expect-offline
 
-srun python scripts/02_encode_dataset.py \
+srun python scripts/02_encode_dataset.py ${PY_CONFIG:+--config "$PY_CONFIG"} \
     --dataset-id "$DATASET_DIR" \
     --output "$ENCODED_DIR" \
     --shard-index "$SLURM_ARRAY_TASK_ID" \
