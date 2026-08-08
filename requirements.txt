@@ -1,0 +1,45 @@
+# Dépendances WM-LeRobot.
+#
+# GPU AMD (Adastra MI250X) : installer torch ROCm AVANT ce fichier —
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm6.2
+# GPU NVIDIA / CPU : le torch par défaut de PyPI convient.
+# (slurm/setup_offline.sh fait tout ça dans le bon ordre.)
+
+# Core ML
+torch>=2.4              # transformers récent demande >= 2.4
+torchvision>=0.19
+transformers>=4.40
+numpy>=1.24
+einops>=0.7
+
+# DINOv3 / DINOv2 : chargés via transformers (pas d'install dédiée).
+# DINOv3 est GATED : accès Meta + token HF requis au téléchargement.
+
+# Datasets
+datasets>=2.14
+huggingface-hub>=0.20
+
+# LeRobot (SO-101 datasets). La version PyPI moderne (>= 0.5) suffit :
+lerobot>=0.5
+
+# Vidéo : pyav = fallback robuste quand torchcodec n'a pas ses libs ffmpeg
+# système (cas fréquent sur cluster) — src/data.py bascule tout seul.
+av>=15
+
+# Image handling
+Pillow>=10.0
+opencv-python-headless>=4.8
+
+# Plotting / analysis
+matplotlib>=3.7
+pandas>=2.0
+scikit-learn>=1.3
+
+# Progress bars
+tqdm>=4.65
+
+# Config
+pyyaml>=6.0
+
+# Tests
+pytest>=7.0
