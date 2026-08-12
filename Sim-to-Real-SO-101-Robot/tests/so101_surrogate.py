@@ -45,24 +45,30 @@ JOINT_LIMITS_DEG = [
     (-10.0, 100.0),    # Jaw           / gripper
 ]
 
-# Approximate link geometry. Each entry is the joint's rotation axis and the
-# translation from the previous joint frame, both expressed in the parent frame.
-# Replaced by fitted values once the calibration dump is available.
+# Link geometry **solved from the calibration dump** (200 configurations from a
+# real Isaac Sim run, 2026-08-06) by ``tests/fit_chain.py``: the joint axes come
+# from the recorded jacobians in closed form, the link offsets from a
+# least-squares solve. Residual against the measured body positions is
+# 0.0001 mm — the chain is recovered exactly, not approximated.
 #
-# The links run along local -Y so that, once the 90 degree base yaw below is
-# applied, the arm reaches along world +X. That matches the repo's spatial
-# convention (mat centred near x = 0.22, workspace x in [0.15, 0.30]) and keeps
-# scene coordinates written for the real robot meaningful here.
+# Re-run ``.venv/bin/python tests/fit_chain.py`` to regenerate these after a new
+# dump.
+#
+# The Jaw axis is the one value not measured: body frame origins sit on their
+# own joint axis, so rotating the jaw does not move the jaw body's origin and
+# the axis leaves no trace in the position data. It is set parallel to the pitch
+# axes — what a hinged jaw is — and nothing the surrogate is used for reads it.
 DEFAULT_CHAIN = [
-    {"axis": (0.0, 0.0, 1.0), "origin": (0.0, 0.0000, 0.0542)},   # Rotation    (yaw, vertical)
-    {"axis": (1.0, 0.0, 0.0), "origin": (0.0, 0.0000, 0.0305)},   # Pitch       (shoulder)
-    {"axis": (1.0, 0.0, 0.0), "origin": (0.0, -0.1159, 0.0000)},  # Elbow
-    {"axis": (1.0, 0.0, 0.0), "origin": (0.0, -0.1350, 0.0000)},  # Wrist_Pitch
-    {"axis": (0.0, -1.0, 0.0), "origin": (0.0, -0.0550, 0.0000)}, # Wrist_Roll  (along the arm)
-    {"axis": (1.0, 0.0, 0.0), "origin": (0.0, -0.0280, 0.0000)},  # Jaw
+    {"axis": (-3e-06, 0.0, -1.0), "origin": (0.020791, -0.023075, 0.074541)},   # Rotation
+    {"axis": (1.0, 6e-06, -3e-06), "origin": (-0.006092, -0.030399, 0.074541)},  # Pitch
+    {"axis": (1.0, 7e-06, -3e-06), "origin": (-0.006092, -0.028, 0.11257)},      # Elbow
+    {"axis": (1.0, 6e-06, -3e-06), "origin": (-0.006092, -0.1349, 0.0052)},      # Wrist_Pitch
+    {"axis": (-1e-05, 1.0, -6e-06), "origin": (0.0181, -0.0611, 0.0)},           # Wrist_Roll
+    {"axis": (1.0, 6e-06, -3e-06), "origin": (0.0188, -0.0234, 0.0202)},         # Jaw
 ]
 
-# Where the base sits in the world, from SO101_CFG.init_state (yaw 90 degrees).
+# Where the base sits in the world. Confirmed by the calibration dump: base
+# position (-0.05, 0, 0), orientation quaternion (0.707107, 0, 0, 0.707107).
 BASE_POS = (-0.05, 0.0, 0.0)
 BASE_YAW = math.pi / 2
 

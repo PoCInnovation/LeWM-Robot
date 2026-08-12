@@ -74,6 +74,16 @@ def load_scene_spec(name):
     return module.SCENE
 
 
+def load_task_spec(name):
+    """The ``task`` section of a scene, or an empty dict.
+
+    Lets a scene declare which object is picked, which is the target, and the
+    grasp geometry that goes with them — so adding a scene stays a data change
+    instead of an edit to the policy.
+    """
+    return dict(load_scene_spec(name).get("task") or {})
+
+
 def _spawn_cfg(obj):
     """Build the spawner config for one object entry of the SCENE dict."""
     kind = obj.get("type", "cuboid")

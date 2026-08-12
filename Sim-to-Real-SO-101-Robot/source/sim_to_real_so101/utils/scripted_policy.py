@@ -14,6 +14,8 @@ import carb
 import omni.appwindow
 import torch
 
+from sim_to_real_so101.utils.arm_control import ArmController, GraspPoint
+
 JOINT_ORDER = ["Rotation", "Pitch", "Elbow", "Wrist_Pitch", "Wrist_Roll", "Jaw"]
 
 DEFAULT_POSE = {
@@ -28,7 +30,6 @@ DEFAULT_POSE = {
 # --- IK tuning (mirrors keyboard_ee_control) ---------------------------
 REFERENCE_HZ = 60.0
 
-IK_DAMPING = 0.05
 DQ_MAX_RATE = 0.05 * REFERENCE_HZ       # rad/s of joint motion per IK step
 POS_SPEED_RATE = 0.004 * REFERENCE_HZ   # m/s the target advances toward a waypoint
 ANG_SPEED_RATE = 0.04 * REFERENCE_HZ    # rad/s for the return-home motion
@@ -57,18 +58,51 @@ GRIPPER_HOLD_S = 25 / REFERENCE_HZ   # time to hold while the gripper opens/clos
 STATE_TIMEOUT_S = 400 / REFERENCE_HZ  # max time per motion state before failure
 
 
-class ScriptedPickPlace:
+class ScriptedPickPlace(ArmController):
     """State-machine pick-and-place controller for one rigid object into a target."""
 
-    def __init__(self, env, pick_object="Cube", place_object="BoxFloor",
-                 place_at=(0.22, 0.10, 0.06)):
-        self._env = env
-        robot = env.scene["robot"]
-        self._robot = robot
-        self._device = robot.device
-        self._pick_object = pick_object
-        self._place_object = place_object  # read live so placing follows the box
-        self._place_at = tuple(place_at)   # fallback if the box object is absent
+    #: Task geometry the scene may override, with the values the cube task was
+    #: tuned at. Anything not listed here is not meant to vary per scene.
+    DEFAULT_TASK = {
+        "pick": "Cube",
+        "place": "BoxFloor",
+        "place_at": (0.22, 0.10, 0.06),
+        "grasp_offset": GRASP_OFFSET,
+        "approach_offset": APPROACH_OFFSET,
+        "carry_offset": CARRY_OFFSET,
+        "place_drop_offset": PLACE_DROP_OFFSET,
+        "place_z_lift": PLACE_Z_LIFT,
+        "finger_len": FINGER_LEN,
+        "grasp_lateral": GRASP_LATERAL,
+        "jaw_open": JAW_OPEN,
+        "jaw_closed": JAW_CLOSED,
+        "grasp_tilt": GRASP_TILT,
+        "z_min": Z_MIN,
+        "success_xy_tol": 0.06,
+        "success_z_max": 0.09,
+    }
+
+    def __init__(self, env, task=None, **overrides):
+        """Drive one object into one target.
+
+        ``task`` carries the object names and the grasp geometry, so a new scene
+        is a data change rather than a code change. Unspecified keys fall back to
+        :attr:`DEFAULT_TASK`, which is the tuning the cube task ships with.
+        """
+        super().__init__(env)
+        robot = self._robot
+
+        self.task = {**self.DEFAULT_TASK, **(task or {}), **overrides}
+        unknown = set(self.task) - set(self.DEFAULT_TASK)
+        if unknown:
+            raise ValueError(
+                f"unknown task key(s) {sorted(unknown)}; "
+                f"expected any of {sorted(self.DEFAULT_TASK)}"
+            )
+
+        self._pick_object = self.task["pick"]
+        self._place_object = self.task["place"]  # read live so placing follows the box
+        self._place_at = tuple(self.task["place_at"])  # fallback if the target is absent
 
         self._dt = float(getattr(env, "step_dt", None) or 1.0 / REFERENCE_HZ)
         self._pos_speed = POS_SPEED_RATE * self._dt
@@ -78,60 +112,18 @@ class ScriptedPickPlace:
         self._state_timeout = max(1, round(STATE_TIMEOUT_S / self._dt))
         self._home_max_frames = max(1, round(HOME_MAX_S / self._dt))
 
-        self._arm_ids = robot.find_joints(
-            ["Rotation", "Pitch", "Elbow"], preserve_order=True
-        )[0]
-        self._pitch_id = self._arm_ids[1]
-        self._elbow_id = self._arm_ids[2]
-        self._wrist_id = robot.find_joints(["Wrist_Pitch"])[0][0]
-        self._roll_id = robot.find_joints(["Wrist_Roll"])[0][0]
-        self._jaw_id = robot.find_joints(["Jaw"])[0][0]
-        self._out_ids = [
-            self._arm_ids[0], self._pitch_id, self._elbow_id,
-            self._wrist_id, self._roll_id, self._jaw_id,
-        ]
-
-        ee_body_id = robot.find_bodies(["gripper"])[0][0]
-        self._ee_body_id = ee_body_id
-        self._jac_body_id = ee_body_id - 1 if robot.is_fixed_base else ee_body_id
-
-        # find_bodies() treats its argument as a regex and raises when nothing
-        # matches, so candidates are looked up in the body list directly.
-        body_names = list(robot.data.body_names)
-
-        def first_body(candidates):
-            return next(
-                (body_names.index(name) for name in candidates if name in body_names),
-                None,
-            )
-
-        # The moving-jaw body sits at the business end of the gripper, so its
-        # world position is a good, measured proxy for the grasp point (no need
-        # to extrapolate an unknown finger length along a tilted axis).
-        self._jaw_body_id = first_body(["jaw", "moving_jaw", "Jaw"])
-        if self._jaw_body_id is None:
-            print("[WARNING]: no jaw body found - grasp point falls back to gripper body")
-
-        # Wrist body: the wrist->gripper vector is the gripper's pointing axis,
-        # used to push the control point out to the real fingertips.
-        self._wrist_body_id = first_body(["wrist", "Wrist"])
-
-        limits = getattr(robot.data, "soft_joint_pos_limits", None)
-        if limits is None:
-            limits = robot.data.joint_pos_limits
-        self._limits = limits[0]
-        self._eye3 = torch.eye(3, device=self._device)
-
-        # Home = the robot's actual spawn pose, so it returns exactly there.
-        default_jp = robot.data.default_joint_pos[0]
-        self._home = [float(default_jp[i]) for i in self._out_ids]
+        # Grasp point, held as a fixed offset in the gripper frame so it stays
+        # valid when the wrist rotates. See utils/arm_control.GraspPoint.
+        self._grasp_point = GraspPoint(
+            env, robot, self.task["finger_len"], self.task["grasp_lateral"]
+        )
+        self._jaw_body_id = self._grasp_point.jaw_body_id
+        self._wrist_body_id = self._grasp_point.wrist_body_id
 
         # Live-tunable grasp height (O / L) and fingertip reach (I / K), so both
         # can be dialed in without restarting the sim. Kept out of reset() so
         # they persist across retries.
-        self._grasp_offset = GRASP_OFFSET
-        self._finger_len = FINGER_LEN
-        self._grasp_lateral = GRASP_LATERAL
+        self._grasp_offset = self.task["grasp_offset"]
         self._input = carb.input.acquire_input_interface()
         self._keyboard = omni.appwindow.get_default_app_window().get_keyboard()
         self._sub_kb = self._input.subscribe_to_keyboard_events(
@@ -165,13 +157,31 @@ class ScriptedPickPlace:
                 print(f"[TUNE] GRASP_LATERAL = {self._grasp_lateral:.3f}")
         return True
 
+    # The live-tuning keys change the grasp geometry, so the frozen offset has
+    # to be recomputed; the properties keep that from being forgotten.
+    @property
+    def _finger_len(self):
+        return self._grasp_point.finger_len
+
+    @_finger_len.setter
+    def _finger_len(self, value):
+        self._grasp_point.finger_len = value
+
+    @property
+    def _grasp_lateral(self):
+        return self._grasp_point.grasp_lateral
+
+    @_grasp_lateral.setter
+    def _grasp_lateral(self, value):
+        self._grasp_point.grasp_lateral = value
+
     # ------------------------------------------------------------------ #
     def reset(self):
         """Restart the state machine (call after each env.reset())."""
         self._target_pos = None
         self._roll_target = float(DEFAULT_POSE["Wrist_Roll"])
-        self._jaw_target = JAW_OPEN
-        self._pitch_sum = GRASP_TILT
+        self._jaw_target = self.task["jaw_open"]
+        self._pitch_sum = self.task["grasp_tilt"]
         self._state = 0
         self._timer = 0
         self._needs_sync = True
@@ -179,14 +189,14 @@ class ScriptedPickPlace:
         # Ordered plan: each entry is (name, kind, payload).
         # For "reach", payload = (target_kind, z_offset_above_target).
         self._plan = [
-            ("open_gripper",    "gripper", JAW_OPEN),
-            ("move_above_pick", "reach",  ("pick", APPROACH_OFFSET)),
-            ("descend",         "reach",  ("pick", GRASP_OFFSET)),
-            ("grasp",           "gripper", JAW_CLOSED),
-            ("lift",            "reach",  ("pick_frozen", CARRY_OFFSET)),
-            ("move_above_place", "reach", ("place", CARRY_OFFSET)),
-            ("lower_place",     "reach",  ("place", PLACE_DROP_OFFSET)),
-            ("release",         "gripper", JAW_OPEN),
+            ("open_gripper",    "gripper", self.task["jaw_open"]),
+            ("move_above_pick", "reach",  ("pick", self.task["approach_offset"])),
+            ("descend",         "reach",  ("pick", self._grasp_offset)),
+            ("grasp",           "gripper", self.task["jaw_closed"]),
+            ("lift",            "reach",  ("pick_frozen", self.task["carry_offset"])),
+            ("move_above_place", "reach", ("place", self.task["carry_offset"])),
+            ("lower_place",     "reach",  ("place", self.task["place_drop_offset"])),
+            ("release",         "gripper", self.task["jaw_open"]),
             ("home",            "home",    None),
         ]
         self._frozen_xy = None  # cube xy latched at grasp time
@@ -201,12 +211,14 @@ class ScriptedPickPlace:
         """Live placement reference (follows the box), falling back to place_at."""
         try:
             p = self._obj_pos(self._place_object)
-            return float(p[0]), float(p[1]), float(p[2]) + PLACE_Z_LIFT
+            return float(p[0]), float(p[1]), float(p[2]) + self.task["place_z_lift"]
         except Exception:
             return self._place_at
 
-    def is_success(self, xy_tol=0.06, z_max=0.09):
+    def is_success(self, xy_tol=None, z_max=None):
         """True if the cube ended up inside the box footprint (not still held)."""
+        xy_tol = self.task["success_xy_tol"] if xy_tol is None else xy_tol
+        z_max = self.task["success_z_max"] if z_max is None else z_max
         cube = self._obj_pos(self._pick_object)
         px, py, _ = self._place_ref()
         return (
@@ -215,22 +227,11 @@ class ScriptedPickPlace:
             and float(cube[2]) < z_max
         )
 
-    def _clamp(self, value, joint_id):
-        lo = float(self._limits[joint_id, 0])
-        hi = float(self._limits[joint_id, 1])
-        return max(lo, min(hi, value))
-
-    def _wrist_signs(self, jac):
-        axis_w = jac[3:6, self._wrist_id]
-        s_p = float(torch.sign(torch.dot(jac[3:6, self._pitch_id], axis_w)))
-        s_e = float(torch.sign(torch.dot(jac[3:6, self._elbow_id], axis_w)))
-        return (s_p or 1.0), (s_e or 1.0)
-
     def _waypoint_target(self, kind, z_offset):
         """World-frame goal position for a 'reach' primitive.
 
         z_offset is added above the target reference height (cube center for a
-        pick, box floor for a place), then floored at Z_MIN for safety.
+        pick, box floor for a place), then floored at the task's z_min.
         """
         if kind == "place":
             ref = self._place_ref()
@@ -245,7 +246,7 @@ class ScriptedPickPlace:
             z0 = float(p[2])
         goal = torch.zeros(3, device=self._device)
         goal[:2] = xy
-        goal[2] = max(Z_MIN, z0 + z_offset)
+        goal[2] = max(self.task["z_min"], z0 + z_offset)
         return goal
 
     # ------------------------------------------------------------------ #
@@ -253,42 +254,19 @@ class ScriptedPickPlace:
         """Advance the state machine one frame. Returns the 6 joint targets."""
         robot = self._robot
         joint_pos = robot.data.joint_pos[0]
-        body_pos = robot.data.body_pos_w[0, self._ee_body_id] - self._env.scene.env_origins[0]
-        jac = robot.root_physx_view.get_jacobians()[0, self._jac_body_id]
-        s_p, s_e = self._wrist_signs(jac)
+        jac = self.jacobian()
+        s_p, s_e = self.wrist_signs(jac)
 
-        # Control point = the grasp point: the moving-jaw body, pushed out by
-        # FINGER_LEN along the gripper's pointing axis (wrist->gripper) to reach
-        # the real fingertips. Aiming the fingertips (not the jaw origin) at the
-        # target stops the gripper from overshooting the cube.
-        env_origin = self._env.scene.env_origins[0]
-        if self._jaw_body_id is not None:
-            jaw_pos = robot.data.body_pos_w[0, self._jaw_body_id] - env_origin
-            ee_pos = jaw_pos.clone()
-            if self._wrist_body_id is not None and abs(self._finger_len) > 1e-6:
-                wrist_pos = robot.data.body_pos_w[0, self._wrist_body_id] - env_origin
-                u = body_pos - wrist_pos
-                n = float(torch.linalg.norm(u))
-                if n > 1e-6:
-                    ee_pos = ee_pos + self._finger_len * (u / n)
-            # Sideways shift along the gripper opening axis (horizontal part of
-            # gripper-body -> moving-jaw), so the cube ends up between the fixed
-            # and moving jaw rather than under the fixed one.
-            if abs(self._grasp_lateral) > 1e-6:
-                o = (jaw_pos - body_pos).clone()
-                o[2] = 0.0
-                on = float(torch.linalg.norm(o))
-                if on > 1e-6:
-                    ee_pos = ee_pos + self._grasp_lateral * (o / on)
-        else:
-            ee_pos = body_pos
+        # Control point = the grasp point, between the fingers. Rigidly attached
+        # to the gripper, so it follows the wrist however it turns.
+        ee_pos = self._grasp_point.world()
 
         if self._needs_sync:
             self._needs_sync = False
             self._target_pos = ee_pos.clone()
 
         if self.status != "running":
-            return [self._clamp(v, self._out_ids[i]) for i, v in enumerate(self._home_hold())]
+            return [self.clamp(v, self._out_ids[i]) for i, v in enumerate(self._home_hold())]
 
         name, kind, payload = self._plan[self._state]
         self._timer += 1
@@ -311,7 +289,7 @@ class ScriptedPickPlace:
                     c = c + self._ang_speed * (1.0 if d > 0 else -1.0)
                 else:
                     c = h
-                targets.append(self._clamp(c, self._out_ids[i]))
+                targets.append(self.clamp(c, self._out_ids[i]))
             if done or self._timer >= self._home_max_frames:
                 self.status = "done"
             return targets
@@ -329,8 +307,8 @@ class ScriptedPickPlace:
             else:
                 self._target_pos = goal
             # Safety floor: never command the target into the table.
-            if float(self._target_pos[2]) < Z_MIN:
-                self._target_pos[2] = Z_MIN
+            if float(self._target_pos[2]) < self.task["z_min"]:
+                self._target_pos[2] = self.task["z_min"]
             # Reached when the actual EE is within tolerance of the goal.
             if float(torch.linalg.norm(goal - ee_pos)) < POS_TOL:
                 if kindname == "pick":
@@ -344,23 +322,16 @@ class ScriptedPickPlace:
             self.status = "failed"
 
         # --- IK toward self._target_pos (arm) --------------------------
-        delta = self._target_pos - ee_pos
-        j_pos = jac[0:3][:, self._arm_ids]
-        jjt = j_pos @ j_pos.T + (IK_DAMPING ** 2) * self._eye3
-        dq = j_pos.T @ torch.linalg.solve(jjt, delta)
-        dq = torch.clamp(dq, -self._dq_max, self._dq_max)
-        q_arm = joint_pos[self._arm_ids] + dq
-
-        q_rotation = self._clamp(float(q_arm[0]), self._arm_ids[0])
-        q_pitch = self._clamp(float(q_arm[1]), self._pitch_id)
-        q_elbow = self._clamp(float(q_arm[2]), self._elbow_id)
+        q_rotation, q_pitch, q_elbow = self.solve_arm(
+            self._target_pos - ee_pos, jac, joint_pos, self._dq_max
+        )
 
         # Wrist servo holds the gripper tilt (pointing down) while the arm moves.
-        q_wrist = self._clamp(self._pitch_sum - (s_p * q_pitch + s_e * q_elbow), self._wrist_id)
+        q_wrist = self.clamp(self._pitch_sum - (s_p * q_pitch + s_e * q_elbow), self._wrist_id)
         self._pitch_sum = q_wrist + (s_p * q_pitch + s_e * q_elbow)
 
-        self._roll_target = self._clamp(self._roll_target, self._roll_id)
-        self._jaw_target = self._clamp(self._jaw_target, self._jaw_id)
+        self._roll_target = self.clamp(self._roll_target, self._roll_id)
+        self._jaw_target = self.clamp(self._jaw_target, self._jaw_id)
 
         if advance:
             self._state += 1

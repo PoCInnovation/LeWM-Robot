@@ -254,24 +254,48 @@ def test_the_filter_never_rejects_a_policy_episode_for_divergence(seed):
     assert DIVERGED not in {item["code"] for item in report.reasons}, report.summary()
 
 
-def test_the_filter_rejects_an_episode_where_the_wrist_wedges():
-    """The filter earning its keep on a real degenerate case.
+@pytest.mark.parametrize("seed", SEEDS)
+def test_every_placement_completes_on_the_calibrated_arm(seed):
+    """With the real link geometry, the policy succeeds everywhere it is asked.
 
-    With this placement the wrist servo drives Wrist_Pitch into its stop and the
-    IK never recovers: the arm creeps for 425 frames with three action
-    dimensions flat and one joint welded to a limit. Nothing usable — and,
-    unlike a failed grasp, nothing a world model can learn from.
+    This replaces a test that asserted the opposite. On the *guessed* geometry
+    three of these ten placements wedged the wrist against its stop and the IK
+    never recovered — which looked like a defect in the policy. Once the chain
+    was solved from the calibration dump the wedging disappeared entirely: it
+    was an artefact of link lengths that put the cube near the edge of an arm
+    shorter than the real one.
     """
-    from sim_to_real_so101.utils.episode_validation import JOINT_PINNED
-
-    env = build_env(1)
+    env = build_env(seed)
     policy = ScriptedPickPlace(env)
     result = run_controller(env, policy, max_steps=MAX_STEPS)
 
-    report = _check_result(env, result)
-    assert not report.valid
-    assert JOINT_PINNED in {item["code"] for item in report.reasons}
-    assert report.stats["saturation_fraction"][3] == pytest.approx(1.0)
+    assert result["status"] == "done", f"placement {seed} did not complete"
+    assert _check_result(env, result).valid
+
+
+def test_wrist_pitch_only_brushes_its_stop():
+    """Defect #3, sized on the calibrated arm rather than on a guess.
+
+    The recorded dataset shows wrist_flex reaching exactly its limit, so the
+    joint does touch the stop. What matters is for how long: a brief brush is
+    cosmetic, a joint welded there for the episode is unusable data.
+    """
+    env = build_env(0)
+    policy = ScriptedPickPlace(env)
+    result = run_controller(env, policy, max_steps=MAX_STEPS)
+
+    saturation = _check_result(env, result).stats["saturation_fraction"]
+    assert saturation[3] < 0.25, f"Wrist_Pitch sits against its stop {saturation[3]:.0%} of the episode"
+
+
+def test_episode_length_lands_in_the_target_window():
+    """3-6 s per episode was the requested budget; hold the policy to it."""
+    env = build_env(0)
+    policy = ScriptedPickPlace(env)
+    result = run_controller(env, policy, max_steps=MAX_STEPS)
+
+    seconds = result["steps"] / 30.0
+    assert 3.0 <= seconds <= 6.0, f"{seconds:.2f} s per episode"
 
 
 def test_the_validity_filter_tolerates_the_jaw_setpoint_step():

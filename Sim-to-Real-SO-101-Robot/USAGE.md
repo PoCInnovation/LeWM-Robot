@@ -22,7 +22,26 @@ pip install -e source/sim_to_real_so101 --no-deps
 ```
 
 Cela installe les commandes CLI : `lerobot_agent`, `lerobot_push_dataset`,
-`list_envs`, `random_agent`, `zero_agent`, `lerobot_eval`.
+`list_envs`, `random_agent`, `zero_agent`, `lerobot_eval`, `isaac_probe`,
+`validate_scenes`.
+
+### Vérifier la machine (à faire une fois)
+
+```bash
+python -m sim_to_real_so101.scripts.isaac_probe
+```
+
+Écrit `outputs/isaac_probe.json` + un résumé lisible : versions, GPU, encodeurs
+ffmpeg, espace disque, cadence de contrôle, butées articulaires, et des
+échantillons de cinématique. C'est ce fichier qui permet de développer et tester
+le reste du projet sur une machine **sans GPU** (voir [tests/README.md](tests/README.md)).
+
+### Vérifier une scène sans lancer Isaac
+
+```bash
+validate_scenes                 # toutes les scènes
+validate_scenes cube_to_box     # une seule
+```
 
 > Sous Windows, si `conda activate` n'est pas configuré pour le shell, appeler
 > directement l'exe : `& <conda>/envs/leisaac/Scripts/lerobot_agent.exe ...`

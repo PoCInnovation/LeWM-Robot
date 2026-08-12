@@ -61,3 +61,11 @@ SCENE = {
         "box": {"pos_range": {"x": (-0.05, 0.05), "y": (-0.03, 0.04)}},
     },
 }
+
+# Declares what --auto should do with this scene. Without it the scripted policy
+# falls back to its own defaults, which happen to be these same names.
+SCENE["task"] = {
+    "pick": "Cube",
+    "place": "BoxFloor",
+    "place_at": (0.22, 0.10, 0.06),
+}

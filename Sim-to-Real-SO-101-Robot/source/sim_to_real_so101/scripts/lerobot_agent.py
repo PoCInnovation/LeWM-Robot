@@ -121,7 +121,7 @@ import sim_to_real_so101.tasks  # noqa: F401
 from sim_to_real_so101.utils.keyboard import KeyboardControl
 from sim_to_real_so101.utils.keyboard_ee_control import KeyboardEEControl
 from sim_to_real_so101.utils.scripted_policy import ScriptedPickPlace
-from sim_to_real_so101.utils.scene_loader import apply_scene
+from sim_to_real_so101.utils.scene_loader import apply_scene, load_task_spec
 from sim_to_real_so101.utils.lerobot_interface import LeRobotSO101Interface
 from sim_to_real_so101.utils.lerobot_recorder import LeRobotRecorder
 
@@ -137,8 +137,12 @@ def main():
         num_envs=args_cli.num_envs,
         use_fabric=not args_cli.disable_fabric,
     )
+    scene_task = {}
     if args_cli.scene:
         apply_scene(env_cfg, args_cli.scene)
+        # The scene declares which object is picked and where it goes, so --auto
+        # is not tied to one particular scene any more.
+        scene_task = load_task_spec(args_cli.scene)
 
     # create environment
     env_cfg.seed = args_cli.seed
@@ -175,7 +179,7 @@ def main():
 
     if sim_control:
         if args_cli.auto:
-            scripted = ScriptedPickPlace(env.unwrapped)
+            scripted = ScriptedPickPlace(env.unwrapped, task=scene_task)
         else:
             arm_keyboard = KeyboardEEControl(env.unwrapped)
         robot_iface = LeRobotSO101Interface(

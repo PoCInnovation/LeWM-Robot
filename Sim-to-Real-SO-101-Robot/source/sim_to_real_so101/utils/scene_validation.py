@@ -289,6 +289,58 @@ def _check_overlaps(objects, report):
                 )
 
 
+def _check_task(task, objects, scene_name, report):
+    """The ``task`` section tells ``--auto`` what to pick and where to put it.
+
+    A typo here surfaces as a crash minutes into an Isaac Sim launch, so the
+    object names are resolved against the scene instead.
+    """
+    if task is None:
+        return
+    if not isinstance(task, dict):
+        report.add(ERROR, scene_name, "'task' must be a dict")
+        return
+
+    # Kept in step with ScriptedPickPlace.DEFAULT_TASK, which is the authority.
+    known = {
+        "pick", "place", "place_at", "grasp_offset", "approach_offset",
+        "carry_offset", "place_drop_offset", "place_z_lift", "finger_len",
+        "grasp_lateral", "jaw_open", "jaw_closed", "grasp_tilt", "z_min",
+        "success_xy_tol", "success_z_max",
+    }
+    unknown = set(task) - known
+    if unknown:
+        report.add(ERROR, scene_name, f"unknown 'task' key(s) {sorted(unknown)}")
+
+    by_name = {obj["name"]: obj for obj in objects}
+    for role in ("pick", "place"):
+        name = task.get(role)
+        if name is None:
+            continue
+        if not isinstance(name, str):
+            report.add(ERROR, scene_name, f"task['{role}'] must be an object name")
+        elif name not in by_name:
+            report.add(
+                ERROR, scene_name,
+                f"task['{role}'] = '{name}' is not an object of this scene "
+                f"(have {sorted(by_name)})",
+            )
+        elif role == "pick" and by_name[name].get("static", False):
+            report.add(
+                ERROR, scene_name,
+                f"task['pick'] = '{name}' is static — the arm cannot pick up scenery",
+            )
+
+    place_at = task.get("place_at")
+    if place_at is not None and (len(place_at) != 3 or not all(_is_number(v) for v in place_at)):
+        report.add(ERROR, scene_name, "task['place_at'] must be 3 numbers")
+
+    for key in ("grasp_offset", "approach_offset", "carry_offset", "place_drop_offset"):
+        value = task.get(key)
+        if value is not None and not _is_number(value):
+            report.add(ERROR, scene_name, f"task['{key}'] must be a number")
+
+
 def validate_scene(spec, scene_name="<scene>", scenes_dir=SCENES_DIR):
     """Check one ``SCENE`` dict and return a :class:`ValidationReport`."""
     report = ValidationReport(scene_name)
@@ -305,7 +357,7 @@ def validate_scene(spec, scene_name="<scene>", scenes_dir=SCENES_DIR):
         report.add(ERROR, scene_name, "'objects' must be a list")
         return report
 
-    unknown_top = set(spec) - {"objects", "groups"}
+    unknown_top = set(spec) - {"objects", "groups", "task"}
     if unknown_top:
         report.add(WARNING, scene_name, f"unrecognised top-level key(s) {sorted(unknown_top)}")
 
@@ -346,6 +398,8 @@ def validate_scene(spec, scene_name="<scene>", scenes_dir=SCENES_DIR):
         valid_objects.append(obj)
 
     _check_overlaps(valid_objects, report)
+
+    _check_task(spec.get("task"), valid_objects, scene_name, report)
 
     groups = spec.get("groups") or {}
     if not isinstance(groups, dict):
