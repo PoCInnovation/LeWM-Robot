@@ -2,7 +2,10 @@
 # ═══════════════════════════════════════════════════════════════════════
 # UNE SEULE COMMANDE — benchmark de la RTX 4090 depuis un clone vierge :
 #
-#     bash bench.sh
+#     HF_TOKEN=hf_xxx bash bench.sh
+#
+# À la fin : results/benchmark_report_<date>.tar.gz — C'EST CE FICHIER QU'IL
+# FAUT NOUS RENVOYER (estimations + log + infos GPU/versions).
 #
 # Fait tout, dans l'ordre, sans rien demander :
 #   1. trouve un Python 3.10+ ;
@@ -13,7 +16,8 @@
 #   4. vérifie que le GPU est visible ;
 #   5. lance scripts/07_benchmark.py : mini-trains chronométrés →
 #      estimation du temps de chaque étape + TOTAL, results/benchmark.json,
-#      log dans logs/benchmark_<date>.log.
+#      log dans logs/benchmark_<date>.log ;
+#   6. empaquette le tout dans results/benchmark_report_<date>.tar.gz.
 #
 # Options (variables d'environnement, toutes facultatives) :
 #   HF_TOKEN=hf_xxx      token HuggingFace (accès DINOv3)
@@ -39,7 +43,8 @@ LORA_EPOCHS="${LORA_EPOCHS:-20}"
 BATCH_SIZES="${BATCH_SIZES:-32,64,128}"
 BENCH_ARGS="${BENCH_ARGS:-}"
 mkdir -p logs results
-LOG="logs/benchmark_$(date +%Y%m%d_%H%M%S).log"
+STAMP_DATE="$(date +%Y%m%d_%H%M%S)"
+LOG="logs/benchmark_${STAMP_DATE}.log"
 
 say() { echo; echo "══════ $*"; }
 
@@ -56,7 +61,7 @@ if [ -z "${PYTHON:-}" ]; then
             fi
         done
         [ -n "$BASE_PY" ] || { echo "ERREUR : Python >= 3.10 introuvable (sudo apt install python3.12 python3.12-venv)" >&2; exit 1; }
-        say "[1/5] venv $VENV avec $BASE_PY"
+        say "[1/6] venv $VENV avec $BASE_PY"
         "$BASE_PY" -m venv "$VENV"
         PYTHON="$VENV/bin/python"
     fi
@@ -69,7 +74,7 @@ WANT="$(cat requirements_wm.txt | md5sum | cut -c1-12)-$CUDA_INDEX"
 if [ -n "${PYTHON_NO_INSTALL:-}" ] || { [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$WANT" ]; }; then
     echo "Dépendances : déjà installées."
 else
-    say "[2/5] Installation des dépendances (torch CUDA, transformers, lerobot…)"
+    say "[2/6] Installation des dépendances (torch CUDA, transformers, lerobot…)"
     "$PYTHON" -m pip install --upgrade pip -q
     "$PYTHON" -m pip install torch torchvision --index-url "$CUDA_INDEX"
     "$PYTHON" -m pip install -r requirements_wm.txt
@@ -81,7 +86,7 @@ command -v ffmpeg >/dev/null 2>&1 || \
 
 # ── 3. HuggingFace ──────────────────────────────────────────────────────
 if [ -n "${HF_TOKEN:-}" ]; then
-    say "[3/5] Login HuggingFace"
+    say "[3/6] Login HuggingFace"
     "$PYTHON" -c "from huggingface_hub import login; login(token='$HF_TOKEN', add_to_git_credential=False)" \
         && echo "Token HF enregistré." || echo "[avertissement] login HF échoué — l'encodeur DINOv3 sera sauté."
 else
@@ -92,7 +97,7 @@ else
 fi
 
 # ── 4. GPU ──────────────────────────────────────────────────────────────
-say "[4/5] GPU"
+say "[4/6] GPU"
 "$PYTHON" - <<'EOF'
 import torch
 if torch.cuda.is_available():
@@ -110,7 +115,7 @@ if [ "${NO_DATASET:-0}" != "1" ]; then
     DATASET_ID="${DATASET_ID:-$("$PYTHON" -c "import yaml;print(yaml.safe_load(open('$CONFIG'))['dataset']['hf_id'])")}"
     DS_ARGS="--dataset-id $DATASET_ID"
 fi
-say "[5/5] Benchmark (mini-trains chronométrés) — log : $LOG"
+say "[5/6] Benchmark (mini-trains chronométrés) — log : $LOG"
 set +e
 "$PYTHON" scripts/07_benchmark.py --config "$CONFIG" $DS_ARGS \
     --n-epochs "$N_EPOCHS" --lora-epochs "$LORA_EPOCHS" \
@@ -123,8 +128,28 @@ if [ "$STATUS" -ne 0 ]; then
     exit "$STATUS"
 fi
 
+# ── 6. Rapport à renvoyer ───────────────────────────────────────────────
+say "[6/6] Empaquetage du rapport"
+REPORT_DIR="results/benchmark_report_${STAMP_DATE}"
+mkdir -p "$REPORT_DIR"
+cp results/benchmark.json "$REPORT_DIR/benchmark.json"
+cp "$LOG" "$REPORT_DIR/benchmark.log"
+cp "$CONFIG" "$REPORT_DIR/config.yaml"
+{ command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi; } > "$REPORT_DIR/nvidia-smi.txt" 2>&1 || true
+{ uname -a; echo; nproc; free -g 2>/dev/null; echo; "$PYTHON" -m pip freeze; } \
+    > "$REPORT_DIR/environment.txt" 2>&1 || true
+git rev-parse HEAD > "$REPORT_DIR/git_commit.txt" 2>/dev/null || true
+"$PYTHON" scripts/bench_report.py "$REPORT_DIR"
+ARCHIVE="results/benchmark_report_${STAMP_DATE}.tar.gz"
+tar -czf "$ARCHIVE" -C results "benchmark_report_${STAMP_DATE}"
+
 echo
 echo "══════════════════════════════════════════════════════"
-echo " Terminé. Rapport : results/benchmark.json | log : $LOG"
+echo " TERMINÉ."
+echo
+echo "   >>> Fichier à nous renvoyer :  $ARCHIVE"
+echo
+echo " (contenu : summary.md, benchmark.json, benchmark.log, nvidia-smi.txt,"
+echo "  environment.txt, config.yaml, git_commit.txt)"
 echo " Pour relancer avec d'autres cibles : N_EPOCHS=100 bash bench.sh"
 echo "══════════════════════════════════════════════════════"

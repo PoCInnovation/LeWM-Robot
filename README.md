@@ -14,10 +14,15 @@ HF_TOKEN=hf_xxx bash bench.sh        # ou simplement : bash bench.sh
 
 `bench.sh` crée le venv, installe torch CUDA + dépendances, vérifie le GPU,
 lance 2-3 mini-entraînements chronométrés (mêmes modules que le vrai
-pipeline) et affiche l'estimation du temps de chaque étape + le total, avec
-`results/benchmark.json` et un log dans `logs/`. Relancer est instantané
-(installation sautée). `HF_TOKEN` est facultatif : DINOv3 est gated, sans
-token l'étape encodeur est sautée et tout le reste est mesuré.
+pipeline) et affiche l'estimation du temps de chaque étape + le total.
+
+**À la fin, renvoyez-nous le fichier `results/benchmark_report_<date>.tar.gz`**
+(résumé, `benchmark.json`, log complet, `nvidia-smi`, versions des libs).
+
+Prérequis : driver NVIDIA récent (`nvidia-smi` fonctionne), Python ≥ 3.10,
+`ffmpeg` (`sudo apt install ffmpeg`), ~10 GB de disque, et le token HF
+fourni (`HF_TOKEN`, nécessaire pour DINOv3). Durée : ~5 min d'installation
+au premier lancement + ~3-5 min de benchmark. Relancer est instantané.
 
 Variables : `N_EPOCHS=100 bash bench.sh`, `BATCH_SIZES=64,128,256`,
 `DATASET_ID=user/dataset`, `NO_DATASET=1` (pas de téléchargement).
