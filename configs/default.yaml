@@ -8,7 +8,11 @@ encoder:
   family: "dinov3"                      # "dinov3" (Meta, validé) / "dinov2" (public fallback)
   size: "small"                         # "small" (21M) / "base" (86M) / "large" (300M) / "giant" (1.1B)
   image_size: 224
-  dtype: "float32"                      # "float32" / "float16" / "bfloat16"
+  # dtype des POIDS de l'encodeur : "auto" = bf16 sur GPU compatible (4090),
+  # fp32 sur CPU. Sorties toujours renvoyées en fp32. "float32" pour forcer.
+  dtype: "auto"                         # "auto" / "float32" / "bfloat16" / "float16"
+  # "sdpa" = flash attention via torch (recommandé) ; "eager" = référence
+  attn_implementation: "sdpa"
 
 # Configuration du dataset LeRobot HuggingFace
 dataset:
@@ -20,6 +24,15 @@ dataset:
   delta_timesteps: 1
   cache_dir: null                       # null = défaut HF
   val_fraction: 0.2
+
+# Matériel — tout est "auto" : rien à toucher sur une RTX 4090 (24 GB).
+hardware:
+  tf32: true                            # matmuls fp32 en TF32 (Ampere+) : ~2x, précision OK
+  cudnn_benchmark: true                 # autotune des kernels (shapes fixes)
+  precision: "auto"                     # autocast : auto (bf16 sur GPU) / bf16 / fp16 / fp32
+  data_device: "auto"                   # latents pré-encodés : auto (VRAM si ça tient) / cuda / cpu
+  num_workers: "auto"                   # DataLoader d'encodage : auto (= cœurs - 2, max 8)
+  compile: false                        # torch.compile du predictor (04/05) — opt-in
 
 # Configuration des fusions à tester ( pour le cross cam)
 fusion:

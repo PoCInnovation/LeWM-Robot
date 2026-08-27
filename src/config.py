@@ -66,8 +66,51 @@ def log_environment() -> None:
     print(f"  PyTorch    : {torch.__version__}")
     print(f"  CUDA       : {torch.cuda.is_available()}")
     if torch.cuda.is_available():
-        print(f"  GPU        : {torch.cuda.get_device_name(0)}")
-        print(f"  VRAM       : {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        p = torch.cuda.get_device_properties(0)
+        free, total = torch.cuda.mem_get_info(0)
+        print(f"  GPU        : {p.name} (sm_{p.major}{p.minor}, "
+              f"CUDA {torch.version.cuda}, cuDNN {torch.backends.cudnn.version()})")
+        print(f"  VRAM       : {total / 1e9:.1f} GB total, {free / 1e9:.1f} GB libre")
+        print(f"  bf16       : {torch.cuda.is_bf16_supported()}")
+        print(f"  TF32       : matmul={torch.backends.cuda.matmul.allow_tf32} "
+              f"cudnn={torch.backends.cudnn.allow_tf32}")
     else:
         print("  GPU        : (aucun, mode CPU)")
     print("=" * 60)
+
+
+def hardware_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Section `hardware` du YAML avec des défauts sûrs (cible RTX 4090).
+
+    Clés :
+        tf32            : bool   — TF32 pour les matmuls fp32 (défaut True)
+        cudnn_benchmark : bool   — autotune cuDNN (défaut True)
+        precision       : str    — "auto" (bf16 sur GPU compatible) / "bf16" /
+                                   "fp16" / "fp32"
+        data_device     : str    — "auto" / "cuda" / "cpu" : où héberger les
+                                   latents pré-encodés pendant le training
+        num_workers     : int|"auto" — workers DataLoader (encodage)
+        compile         : bool   — torch.compile du predictor (défaut False)
+    """
+    defaults = {
+        "tf32": True,
+        "cudnn_benchmark": True,
+        "precision": "auto",
+        "data_device": "auto",
+        "num_workers": "auto",
+        "compile": False,
+    }
+    hw = dict(defaults)
+    hw.update(cfg.get("hardware") or {})
+    return hw
+
+
+def setup_hardware(cfg: Dict[str, Any], verbose: bool = True) -> Dict[str, Any]:
+    """Applique la section `hardware` (TF32, cuDNN) et la renvoie."""
+    from src.device import configure_backend
+    hw = hardware_config(cfg)
+    configure_backend(tf32=bool(hw["tf32"]),
+                      cudnn_benchmark=bool(hw["cudnn_benchmark"]),
+                      verbose=verbose)
+    return hw

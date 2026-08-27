@@ -13,11 +13,13 @@ dans l'espace latent.
 
 ```
 .
-├── requirements.txt
+├── requirements_wm.txt
+├── run_local.sh               Chaîne complète en local (machine RTX 4090) : 01 → 06
 ├── configs/
-│   └── default.yaml           Config centralisée (encoder, dataset, fusion, training)
+│   └── default.yaml           Config centralisée (encoder, dataset, hardware, fusion, probe)
 ├── src/
-│   ├── encoders.py            Wrapper DINOv3/DINOv2 (frozen)
+│   ├── device.py              Réglages GPU : TF32, bf16 auto, latents en VRAM, AdamW fused, compile
+│   ├── encoders.py            Wrapper DINOv3/DINOv2 (frozen, bf16 + SDPA, preprocessing GPU)
 │   ├── fusion.py              5 stratégies de fusion multi-camera
 │   ├── data.py                Loader LeRobot HuggingFace
 │   ├── probes.py              ActionProbe + DynamicsProbe + training utils
@@ -25,17 +27,17 @@ dans l'espace latent.
 │   ├── predictor.py           World model action-conditionné (LoRA-friendly)
 │   ├── lora.py                Injection LoRA + merge
 │   ├── losses.py              MSE multi-step + cosine + DANN backup
-│   └── planner.py             CEM planner + MPC controller
+│   └── planner.py             CEM planner (autocast bf16, rollouts par chunks) + MPC controller
 ├── scripts/
-│   ├── 01_test_dinov3.py            Sanity check DINOv3
-│   ├── 02_encode_dataset.py         Pré-encode dataset (sim ou réel)
-│   ├── 03_compare_fusion.py         Compare les fusions (M1)
-│   ├── 04_train_predictor.py        Train predictor sur Isaac sim (M4)
+│   ├── 01_test_dinov3.py            Sanity check encodeur (+ débit, cos-sim bf16/fp32)
+│   ├── 02_encode_dataset.py         Pré-encode dataset (bf16, workers auto, --output)
+│   ├── 03_compare_fusion.py         Compare les fusions (M1) — latents en VRAM
+│   ├── 04_train_predictor.py        Train predictor (M4) — bf16, fused AdamW, --compile
 │   ├── 05_train_lora.py             Train LoRA sur démos réelles (M4)
 │   └── 06_inference_demo.py         Démo end-to-end avec CEM planner (M5)
 ├── results/                   Outputs (encoded data, checkpoints, plots)
-├── tests/                     (à venir)
-└── DEPLOYMENT.md              Guide pour la machine GPU
+├── tests/                     pytest : adaptation GPU (CPU-only + 4 tests GPU)
+└── DEPLOYMENT.md              Guide machine RTX 4090 (install, run_local.sh, réglages, dépannage)
 ```
 
 ## Setup
@@ -45,9 +47,14 @@ dans l'espace latent.
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Installe les dépendances
-pip install -r requirements.txt
+# Installe les dépendances (torch CUDA d'abord sur une machine NVIDIA)
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install -r requirements_wm.txt
+pip install git+https://github.com/huggingface/lerobot.git
 ```
+
+Machine RTX 4090 : voir `DEPLOYMENT.md`, puis `SMOKE=1 bash run_local.sh`
+et `bash run_local.sh` (chaîne 01 → 06 sans rien d'autre à taper).
 
 ## Pipeline (Milestone 1 — fusion multi-camera)
 
@@ -74,6 +81,7 @@ python scripts/03_compare_fusion.py
 - [x] CEM planner + MPC controller
 - [x] Scripts de training (04, 05) écrits et import-checks OK
 - [x] Script d'inférence end-to-end (06)
+- [x] Adaptation RTX 4090 : bf16/TF32, SDPA, latents en VRAM, `run_local.sh`, tests (`python -m pytest tests/`)
 - [ ] Encodage du dataset complet (à faire sur GPU)
 - [ ] Training predictor + LoRA (à faire sur GPU)
 - [ ] Setup Isaac Lab (Milestone 2)
@@ -91,6 +99,10 @@ python scripts/03_compare_fusion.py
 
 ## Notes
 
-- Le code est **CPU-compatible** mais entraînera vite besoin d'un GPU NVIDIA
-  pour les étapes lourdes (predictor training, Isaac generation).
+- Le code est **CPU-compatible** ; sur GPU NVIDIA (RTX 4090) tout est
+  automatique via la section `hardware` de `configs/default.yaml`
+  (précision, emplacement des latents, workers, compile).
+- L'encodeur lit `patch_size` et le nombre de register tokens depuis le
+  modèle chargé : DINOv2 → 256 patches (patch 14), DINOv3 → 196 patches +
+  4 registres retirés de la sortie.
 - Les milestones 2-5 sont à venir.

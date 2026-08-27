@@ -42,6 +42,14 @@ class CEMConfig:
     cost_type: str = "cosine"           # "cosine" / "mse"
     elite_momentum: float = 0.0         # 0 = full refit, >0 = lisser entre iter
     device: str = "auto"
+    # GPU (RTX 4090) :
+    #   precision     : "auto" = rollouts en autocast bf16 sur CUDA (x2 sur le
+    #                   predictor, coût calculé en fp32) ; "fp32" pour désactiver
+    #   rollout_chunk : nb de candidats déroulés par passe (0 = tous d'un coup).
+    #                   Permet n_samples=2000-5000 sans OOM : la VRAM du rollout
+    #                   ~ chunk × N_tokens × D × n_layers.
+    precision: str = "auto"
+    rollout_chunk: int = 0
 
 
 class CEMPlanner:
@@ -59,6 +67,8 @@ class CEMPlanner:
         self.config = config
         self.device = self._resolve_device()
         self.predictor.to(self.device).eval()
+        from src.device import resolve_amp_dtype
+        self.amp_dtype = resolve_amp_dtype(self.device, config.precision)
 
     def _resolve_device(self) -> torch.device:
         if self.config.device == "auto":
@@ -91,6 +101,8 @@ class CEMPlanner:
             z_goal = z_goal[0]
 
         N, D = z_current.shape
+        z_current = z_current.to(device)
+        z_goal = z_goal.to(device)
 
         # Init distribution
         mean = torch.zeros(cfg.horizon, cfg.action_dim, device=device)
@@ -105,14 +117,8 @@ class CEMPlanner:
                                       cfg.action_dim, device=device))
             actions = actions.clamp(cfg.action_low, cfg.action_high)
 
-            # 2. Rollout en batch
-            z_pred = z_current.unsqueeze(0).expand(cfg.n_samples, -1, -1).clone()
-            z_pred = z_pred.to(device)
-            for t in range(cfg.horizon):
-                z_pred = self.predictor(z_pred, actions[:, t, :])
-
-            # 3. Compute cost
-            costs = self._compute_cost(z_pred, z_goal)  # (n_samples,)
+            # 2. Rollout en batch (par chunks si demandé) + 3. coût
+            costs = self._rollout_costs(z_current, z_goal, actions)  # (n_samples,)
 
             # 4. Select elites
             elite_idx = costs.argsort()[:cfg.n_elites]
@@ -133,6 +139,33 @@ class CEMPlanner:
         if return_diagnostics:
             return mean, history
         return mean
+
+    def _rollout_costs(self, z_current: torch.Tensor, z_goal: torch.Tensor,
+                       actions: torch.Tensor) -> torch.Tensor:
+        """
+        Déroule le predictor sur chaque séquence d'actions et renvoie le coût
+        final par candidat. Autocast bf16 sur CUDA ; coût en fp32.
+
+        Args:
+            z_current : (N, D)
+            z_goal    : (N, D)
+            actions   : (n_samples, horizon, action_dim)
+        Returns:
+            costs : (n_samples,)
+        """
+        n = actions.shape[0]
+        chunk = self.config.rollout_chunk if self.config.rollout_chunk > 0 else n
+        out = []
+        for s in range(0, n, chunk):
+            a = actions[s:s + chunk]
+            z = z_current.unsqueeze(0).expand(a.shape[0], -1, -1).contiguous()
+            with torch.autocast(device_type=self.device.type,
+                                dtype=self.amp_dtype or torch.float32,
+                                enabled=self.amp_dtype is not None):
+                for t in range(a.shape[1]):
+                    z = self.predictor(z, a[:, t, :])
+            out.append(self._compute_cost(z.float(), z_goal.float()))
+        return torch.cat(out)
 
     def _compute_cost(self, z_pred_final: torch.Tensor,
                        z_goal: torch.Tensor) -> torch.Tensor:
