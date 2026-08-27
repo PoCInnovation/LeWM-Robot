@@ -13,6 +13,7 @@ dans l'espace latent.
 
 ```
 .
+├── Makefile                   make install / bench / smoke / run / test
 ├── requirements_wm.txt
 ├── run_local.sh               Chaîne complète en local (machine RTX 4090) : 01 → 06
 ├── configs/
@@ -70,7 +71,7 @@ python scripts/02_encode_dataset.py user/so101_pick_drop_duck --size small
 python scripts/03_compare_fusion.py
 
 # Estimer le temps d'un run complet sur ta machine (mini-trains chronométrés)
-python scripts/07_benchmark.py --n-epochs 100
+make bench          # (= python scripts/07_benchmark.py ... avec log)
 ```
 
 ## État actuel

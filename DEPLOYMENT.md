@@ -18,6 +18,9 @@ Tout reste fonctionnel sur CPU (fp32, plus lent) pour développer.
 
 ## 2. Installation
 
+Raccourci : `make install` (venv + torch cu128 + dépendances + lerobot), puis
+`huggingface-cli login`. Toutes les cibles : `make help`. À la main :
+
 ```bash
 git clone <repo> && cd LeWM-Robot
 git checkout feat/rtx4090
@@ -44,7 +47,7 @@ Déroule TOUTE la chaîne en miniature (200 paires, 2 epochs) — à faire sur
 chaque nouvelle machine avant un vrai run :
 
 ```bash
-SMOKE=1 bash run_local.sh
+make smoke          # = SMOKE=1 bash run_local.sh
 ```
 
 ### Chaîne complète
@@ -117,7 +120,11 @@ boucle que 03/04/05/06, 3 batch sizes pour le predictor) et extrapole à la
 taille du dataset et au nombre d'epochs visé.
 
 ```bash
-# après 02 (utilise les vrais latents + leur nombre de paires) :
+make bench                     # commande unique (log dans logs/benchmark_*.log)
+make bench N_EPOCHS=100        # variables : N_EPOCHS, LORA_EPOCHS, BATCH_SIZES, DATASET_ID, BENCH_ARGS
+make bench-quick               # sans dataset ni encodeur (~1 min)
+
+# équivalent direct :
 python scripts/07_benchmark.py --n-epochs 100 --dataset-id divisio74/duck_dataset_v3
 
 # avant même d'avoir encodé (latents synthétiques aux bonnes dimensions) :
