@@ -62,3 +62,4 @@ runs/
 # Temp
 *.tmp
 *~
+results/benchmark_report_*
