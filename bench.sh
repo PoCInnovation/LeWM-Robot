@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# ═══════════════════════════════════════════════════════════════════════
+# UNE SEULE COMMANDE — benchmark de la RTX 4090 depuis un clone vierge :
+#
+#     bash bench.sh
+#
+# Fait tout, dans l'ordre, sans rien demander :
+#   1. trouve un Python 3.10+ ;
+#   2. crée .venv et installe torch CUDA + dépendances + lerobot
+#      (sauté si déjà fait — relancer est instantané) ;
+#   3. login HuggingFace si HF_TOKEN est posé (DINOv3 est gated ; sans
+#      token l'encodeur est simplement sauté, le reste est mesuré) ;
+#   4. vérifie que le GPU est visible ;
+#   5. lance scripts/07_benchmark.py : mini-trains chronométrés →
+#      estimation du temps de chaque étape + TOTAL, results/benchmark.json,
+#      log dans logs/benchmark_<date>.log.
+#
+# Options (variables d'environnement, toutes facultatives) :
+#   HF_TOKEN=hf_xxx      token HuggingFace (accès DINOv3)
+#   N_EPOCHS=100         epochs visés pour le predictor   (défaut 30)
+#   LORA_EPOCHS=20       epochs visés pour le LoRA        (défaut 20)
+#   BATCH_SIZES=64,128   batch sizes des mini-trains      (défaut 32,64,128)
+#   DATASET_ID=...       dataset pour mesurer le décodage vidéo réel
+#                        (défaut : celui de configs/default.yaml)
+#   NO_DATASET=1         ne pas télécharger/mesurer le dataset
+#   BENCH_ARGS="..."     args supplémentaires pour 07_benchmark.py
+#   PYTHON=/chemin/python  utiliser cet interpréteur (pas de venv)
+#   CUDA_INDEX=...       index pip torch (défaut cu128)
+# ═══════════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+cd "$(dirname "$0")"
+
+VENV="${VENV:-.venv}"
+CUDA_INDEX="${CUDA_INDEX:-https://download.pytorch.org/whl/cu128}"
+CONFIG="${CONFIG:-configs/default.yaml}"
+N_EPOCHS="${N_EPOCHS:-30}"
+LORA_EPOCHS="${LORA_EPOCHS:-20}"
+BATCH_SIZES="${BATCH_SIZES:-32,64,128}"
+BENCH_ARGS="${BENCH_ARGS:-}"
+mkdir -p logs results
+LOG="logs/benchmark_$(date +%Y%m%d_%H%M%S).log"
+
+say() { echo; echo "══════ $*"; }
+
+# ── 1. Python ───────────────────────────────────────────────────────────
+if [ -z "${PYTHON:-}" ]; then
+    if [ -x "$VENV/bin/python" ]; then
+        PYTHON="$VENV/bin/python"
+    else
+        BASE_PY=""
+        for c in python3.12 python3.11 python3.10 python3; do
+            if command -v "$c" >/dev/null 2>&1 && \
+               "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)'; then
+                BASE_PY="$c"; break
+            fi
+        done
+        [ -n "$BASE_PY" ] || { echo "ERREUR : Python >= 3.10 introuvable (sudo apt install python3.12 python3.12-venv)" >&2; exit 1; }
+        say "[1/5] venv $VENV avec $BASE_PY"
+        "$BASE_PY" -m venv "$VENV"
+        PYTHON="$VENV/bin/python"
+    fi
+fi
+echo "Python : $PYTHON ($("$PYTHON" -c 'import sys;print(sys.version.split()[0])'))"
+
+# ── 2. Dépendances (idempotent : marqueur = hash de requirements) ───────
+STAMP="$VENV/.installed"
+WANT="$(cat requirements_wm.txt | md5sum | cut -c1-12)-$CUDA_INDEX"
+if [ -n "${PYTHON_NO_INSTALL:-}" ] || { [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$WANT" ]; }; then
+    echo "Dépendances : déjà installées."
+else
+    say "[2/5] Installation des dépendances (torch CUDA, transformers, lerobot…)"
+    "$PYTHON" -m pip install --upgrade pip -q
+    "$PYTHON" -m pip install torch torchvision --index-url "$CUDA_INDEX"
+    "$PYTHON" -m pip install -r requirements_wm.txt
+    "$PYTHON" -m pip install "lerobot>=0.5"
+    echo "$WANT" > "$STAMP"
+fi
+command -v ffmpeg >/dev/null 2>&1 || \
+    echo "[avertissement] ffmpeg absent : la mesure du décodage vidéo réel sera sautée (sudo apt install ffmpeg)."
+
+# ── 3. HuggingFace ──────────────────────────────────────────────────────
+if [ -n "${HF_TOKEN:-}" ]; then
+    say "[3/5] Login HuggingFace"
+    "$PYTHON" -c "from huggingface_hub import login; login(token='$HF_TOKEN', add_to_git_credential=False)" \
+        && echo "Token HF enregistré." || echo "[avertissement] login HF échoué — l'encodeur DINOv3 sera sauté."
+else
+    if ! "$PYTHON" -c "from huggingface_hub import whoami; whoami()" >/dev/null 2>&1; then
+        echo "[info] Pas de token HF (HF_TOKEN) : DINOv3 est gated → l'étape encodeur sera"
+        echo "       sautée ou mesurée avec dinov2 si présent ; le reste est complet."
+    fi
+fi
+
+# ── 4. GPU ──────────────────────────────────────────────────────────────
+say "[4/5] GPU"
+"$PYTHON" - <<'EOF'
+import torch
+if torch.cuda.is_available():
+    p = torch.cuda.get_device_properties(0)
+    print(f"GPU : {p.name} | {p.total_memory/1e9:.0f} GB | sm_{p.major}{p.minor} | "
+          f"CUDA {torch.version.cuda} | bf16={torch.cuda.is_bf16_supported()}")
+else:
+    print("[ATTENTION] Aucun GPU visible : le benchmark tournera sur CPU (temps non représentatifs).")
+    print("            Vérifier nvidia-smi ; sous WSL2, mettre à jour le driver NVIDIA Windows.")
+EOF
+
+# ── 5. Benchmark ────────────────────────────────────────────────────────
+DS_ARGS=""
+if [ "${NO_DATASET:-0}" != "1" ]; then
+    DATASET_ID="${DATASET_ID:-$("$PYTHON" -c "import yaml;print(yaml.safe_load(open('$CONFIG'))['dataset']['hf_id'])")}"
+    DS_ARGS="--dataset-id $DATASET_ID"
+fi
+say "[5/5] Benchmark (mini-trains chronométrés) — log : $LOG"
+set +e
+"$PYTHON" scripts/07_benchmark.py --config "$CONFIG" $DS_ARGS \
+    --n-epochs "$N_EPOCHS" --lora-epochs "$LORA_EPOCHS" \
+    --batch-sizes "$BATCH_SIZES" --output results/benchmark.json $BENCH_ARGS \
+    2>&1 | tee "$LOG"
+STATUS=${PIPESTATUS[0]}
+set -e
+if [ "$STATUS" -ne 0 ]; then
+    echo; echo "ERREUR : le benchmark s'est arrêté (code $STATUS). Détails : $LOG" >&2
+    exit "$STATUS"
+fi
+
+echo
+echo "══════════════════════════════════════════════════════"
+echo " Terminé. Rapport : results/benchmark.json | log : $LOG"
+echo " Pour relancer avec d'autres cibles : N_EPOCHS=100 bash bench.sh"
+echo "══════════════════════════════════════════════════════"

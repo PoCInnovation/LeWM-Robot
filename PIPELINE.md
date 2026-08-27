@@ -13,6 +13,7 @@ dans l'espace latent.
 
 ```
 .
+├── bench.sh                   UNE commande : install + benchmark chronométré (estimation 4090)
 ├── Makefile                   make install / bench / smoke / run / test
 ├── requirements_wm.txt
 ├── run_local.sh               Chaîne complète en local (machine RTX 4090) : 01 → 06

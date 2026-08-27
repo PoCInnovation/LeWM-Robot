@@ -120,7 +120,8 @@ boucle que 03/04/05/06, 3 batch sizes pour le predictor) et extrapole à la
 taille du dataset et au nombre d'epochs visé.
 
 ```bash
-make bench                     # commande unique (log dans logs/benchmark_*.log)
+bash bench.sh                  # COMMANDE UNIQUE depuis un clone vierge : install + login HF + GPU + benchmark
+make bench                     # idem (log dans logs/benchmark_*.log)
 make bench N_EPOCHS=100        # variables : N_EPOCHS, LORA_EPOCHS, BATCH_SIZES, DATASET_ID, BENCH_ARGS
 make bench-quick               # sans dataset ni encodeur (~1 min)
 

@@ -1,26 +1,37 @@
-> If you see this section, you've just created a repository using [PoC Innovation's Open-Source project template](https://github.com/PoCInnovation/open-source-project-template). Check the [getting started guide](./.github/getting-started.md).
+# LeWM-Robot
 
-# [PROJECT'S NAME]
+World model action-conditionné pour le bras SO-101 : encodeur DINOv3 figé,
+fusion multi-caméra, predictor transformer, LoRA sim→réel et planner CEM.
+Cette branche (`feat/rtx4090`) est prête pour une machine **RTX 4090**.
 
-[Project's description]
+## Une seule commande : estimer le temps d'entraînement sur la 4090
 
-## How does it work?
+```bash
+git clone git@github.com:PoCInnovation/LeWM-Robot.git && cd LeWM-Robot
+git checkout feat/rtx4090
+HF_TOKEN=hf_xxx bash bench.sh        # ou simplement : bash bench.sh
+```
 
-[Explain how this project is working]
+`bench.sh` crée le venv, installe torch CUDA + dépendances, vérifie le GPU,
+lance 2-3 mini-entraînements chronométrés (mêmes modules que le vrai
+pipeline) et affiche l'estimation du temps de chaque étape + le total, avec
+`results/benchmark.json` et un log dans `logs/`. Relancer est instantané
+(installation sautée). `HF_TOKEN` est facultatif : DINOv3 est gated, sans
+token l'étape encodeur est sautée et tout le reste est mesuré.
 
-## Getting Started
+Variables : `N_EPOCHS=100 bash bench.sh`, `BATCH_SIZES=64,128,256`,
+`DATASET_ID=user/dataset`, `NO_DATASET=1` (pas de téléchargement).
 
-### Installation
+## Ensuite
 
-[Explain how to install all of the project's dependencies]
+```bash
+make smoke      # pipeline miniature de bout en bout (~2-5 min)
+make run        # pipeline complet : encodage → fusions → predictor → démo CEM
+make help       # toutes les cibles
+```
 
-### Quickstart
-
-[Explain how to run this project]
-
-### Usage
-
-[Explain how to use this project]
+Documentation : [DEPLOYMENT.md](./DEPLOYMENT.md) (machine 4090, réglages,
+dépannage) et [PIPELINE.md](./PIPELINE.md) (architecture, scripts, état).
 
 ## Get involved
 

@@ -2,7 +2,8 @@
 # LeWM-Robot — raccourcis pour la machine RTX 4090
 #
 #   make install        venv + torch CUDA + dépendances + lerobot
-#   make bench          ★ benchmark complet → estimation du temps d'un run
+#   make bench          ★ TOUT-EN-UN : install si besoin + benchmark → estimation du temps d'un run
+#                       (équivalent : bash bench.sh — fonctionne depuis un clone vierge)
 #   make check          sanity check GPU/encodeur (01)
 #   make smoke          pipeline miniature de bout en bout (~2-5 min)
 #   make run            pipeline complet (run_local.sh)
@@ -26,7 +27,6 @@ N_EPOCHS   ?= 30
 LORA_EPOCHS ?= 20
 BATCH_SIZES ?= 32,64,128
 BENCH_ARGS ?=
-BENCH_OUT  ?= results/benchmark.json
 
 .PHONY: help install venv check bench bench-quick smoke run encode fusion train lora demo test clean-results
 
@@ -46,22 +46,20 @@ install: venv
 	@echo "→ huggingface-cli login (DINOv3 gated), puis : make bench"
 
 # ── Benchmark (commande unique) ─────────────────────────────────────────
-# Lance les mini-trains chronométrés et écrit $(BENCH_OUT).
+# Délègue à bench.sh : venv + install si besoin, login HF (HF_TOKEN), GPU,
+# puis mini-trains chronométrés → results/benchmark.json + logs/benchmark_*.log.
 # Utilise les vrais latents si results/encoded/encoded_data.pt existe, et
 # mesure le vrai pipeline d'encodage (décodage vidéo) sur $(DATASET_ID).
 bench:
-	@mkdir -p logs
-	$(PYTHON) scripts/07_benchmark.py --config $(CONFIG) \
-	    --dataset-id "$(DATASET_ID)" \
-	    --n-epochs $(N_EPOCHS) --lora-epochs $(LORA_EPOCHS) \
-	    --batch-sizes $(BATCH_SIZES) --output $(BENCH_OUT) $(BENCH_ARGS) \
-	    2>&1 | tee logs/benchmark_$$(date +%Y%m%d_%H%M%S).log
+	CONFIG=$(CONFIG) DATASET_ID="$(DATASET_ID)" N_EPOCHS=$(N_EPOCHS) \
+	    LORA_EPOCHS=$(LORA_EPOCHS) BATCH_SIZES=$(BATCH_SIZES) \
+	    BENCH_ARGS="$(BENCH_ARGS)" CUDA_INDEX=$(CUDA_INDEX) bash bench.sh
 
 # Variante sans dataset ni encodeur (latents synthétiques, ~1 min)
 bench-quick:
 	$(PYTHON) scripts/07_benchmark.py --config $(CONFIG) --skip-encoder \
 	    --n-epochs $(N_EPOCHS) --lora-epochs $(LORA_EPOCHS) \
-	    --batch-sizes $(BATCH_SIZES) --output $(BENCH_OUT) $(BENCH_ARGS)
+	    --batch-sizes $(BATCH_SIZES) --output results/benchmark.json $(BENCH_ARGS)
 
 # ── Pipeline ────────────────────────────────────────────────────────────
 check:
