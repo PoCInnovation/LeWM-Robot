@@ -35,6 +35,7 @@ dans l'espace latent.
 │   ├── 04_train_predictor.py        Train predictor (M4) — bf16, fused AdamW, --compile
 │   ├── 05_train_lora.py             Train LoRA sur démos réelles (M4)
 │   └── 06_inference_demo.py         Démo end-to-end avec CEM planner (M5)
+│   └── 07_benchmark.py              Mini-trains chronométrés → estimation du temps d'un run complet
 ├── results/                   Outputs (encoded data, checkpoints, plots)
 ├── tests/                     pytest : adaptation GPU (CPU-only + 4 tests GPU)
 └── DEPLOYMENT.md              Guide machine RTX 4090 (install, run_local.sh, réglages, dépannage)
@@ -67,6 +68,9 @@ python scripts/02_encode_dataset.py user/so101_pick_drop_duck --size small
 
 # 3. Comparer les stratégies de fusion
 python scripts/03_compare_fusion.py
+
+# Estimer le temps d'un run complet sur ta machine (mini-trains chronométrés)
+python scripts/07_benchmark.py --n-epochs 100
 ```
 
 ## État actuel

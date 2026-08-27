@@ -109,7 +109,32 @@ Note sur `encoded_data.pt` : le fichier contient 4 tenseurs de latents fp32
 Pour un gros dataset, `data_device: auto` les laissera en RAM et transférera
 chaque batch ; la VRAM n'est jamais un blocage, la RAM système peut l'être.
 
-## 5. Ordres de grandeur attendus (DINOv3-small)
+## 5. Estimer le temps d'un run complet : `07_benchmark.py`
+
+Avant de lancer un long training, mesure les vrais temps sur TA machine :
+le script lance de courts entraînements chronométrés (mêmes modules et même
+boucle que 03/04/05/06, 3 batch sizes pour le predictor) et extrapole à la
+taille du dataset et au nombre d'epochs visé.
+
+```bash
+# après 02 (utilise les vrais latents + leur nombre de paires) :
+python scripts/07_benchmark.py --n-epochs 100 --dataset-id divisio74/duck_dataset_v3
+
+# avant même d'avoir encodé (latents synthétiques aux bonnes dimensions) :
+python scripts/07_benchmark.py --n-pairs 15000 --n-epochs 100 --skip-encoder
+
+# variantes : --batch-sizes 64,128,256  --n-layers 12  --fusion concat_view
+#             --lora-epochs 20 --n-real-pairs 4000  --cem-samples 200,1000,5000
+```
+
+Sortie : une ligne par étape (`02 encodage`, `03 fusions`, `04 predictor` avec
+le batch le plus rapide et le pic VRAM par batch, `05 LoRA`, latence CEM) et
+le **TOTAL**, plus `results/benchmark.json`. `--dataset-id` ajoute la mesure
+du pipeline d'encodage réel (décodage vidéo inclus — c'est le goulot en
+pratique) ; sans lui l'estimation d'encodage est une borne inférieure GPU.
+Compter ~1-3 min pour le benchmark lui-même.
+
+## 6. Ordres de grandeur attendus (DINOv3-small)
 
 | Étape | 4090 | Remarque |
 |---|---|---|
@@ -123,7 +148,7 @@ VRAM : DINOv3-small (dim 384, 392 tokens) tient à `--batch-size 256` ;
 DINOv3-base (768) à 128 ; DINOv3-large (1024) autour de 48. Le pic VRAM est
 loggé à chaque epoch (clé `history` du checkpoint, `peak_vram_gb`).
 
-## 6. Dépannage
+## 7. Dépannage
 
 | Symptôme | Cause / solution |
 |---|---|
@@ -134,7 +159,7 @@ loggé à chaque epoch (clé `history` du checkpoint, `peak_vram_gb`).
 | DINOv3 : 401/403 au téléchargement | accès gated non approuvé : `huggingface-cli login` + demande d'accès Meta, ou `encoder.family: dinov2` |
 | `attn_implementation=sdpa non supporté` | message informatif : transformers retombe sur l'attention eager (plus lente, même résultat) |
 
-## 7. Bonnes pratiques
+## 8. Bonnes pratiques
 
 - `tmux new -s wm` puis `bash run_local.sh` : la chaîne survit à la fermeture du terminal.
 - `watch -n 1 nvidia-smi` dans un second onglet pour vérifier l'utilisation GPU/VRAM.
