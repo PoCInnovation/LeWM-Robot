@@ -2,10 +2,10 @@
 Démo d'inférence end-to-end : image courante + image-goal → planning → action.
 
 Charge :
-    - DINOv3 encoder (figé)
+    - DINOv3 encoder (figé, bf16 + SDPA sur GPU)
     - Fusion cross-cam (poids depuis le predictor checkpoint)
     - Predictor entraîné (Phase A sim + Phase B LoRA, depuis 05)
-    - CEM planner
+    - CEM planner (rollouts en autocast bf16, par chunks)
 
 Et démontre :
     1. Tu donnes deux paires (wrist, front) — current et goal
@@ -16,9 +16,14 @@ Et démontre :
 Pour tester sans robot réel : prend deux frames du dataset (current = t0, goal = t30
 par exemple) et vérifie que le planner trouve des actions cohérentes.
 
+GPU (RTX 4090) : --n-samples 2000 --rollout-chunk 500 tient largement en
+VRAM ; latence typique (horizon 10, 200 candidats, 3 itérations) : quelques
+dizaines de ms.
+
 Usage:
     python scripts/06_inference_demo.py [--lora-ckpt PATH] [--predictor-ckpt PATH]
-                                          [--demo-source dataset|images]
+                                          [--n-samples 200] [--rollout-chunk 0]
+                                          [--precision auto]
 """
 
 import sys
@@ -36,7 +41,13 @@ from src.fusion import make_fusion
 from src.predictor import WorldModelPredictor, PredictorConfig
 from src.lora import LoRAConfig, inject_lora
 from src.planner import CEMPlanner, CEMConfig, MPCController
-from src.config import load_config, set_seed, log_environment
+from src.config import load_config, set_seed, log_environment, setup_hardware
+from src.device import peak_vram_gb, reset_peak_vram
+
+
+def resolve(p) -> Path:
+    p = Path(p)
+    return p if p.is_absolute() else ROOT / p
 
 
 def load_predictor_with_lora(ckpt_path: Path,
@@ -47,7 +58,7 @@ def load_predictor_with_lora(ckpt_path: Path,
     Returns:
         predictor (avec LoRA si applicable), fusion, metadata dict
     """
-    ckpt = torch.load(ckpt_path, weights_only=False, map_location=device)
+    ckpt = torch.load(ckpt_path, weights_only=False, map_location="cpu")
 
     # Reconstituer le predictor
     pred_cfg = PredictorConfig(**ckpt["predictor_config"])
@@ -95,10 +106,43 @@ def encode_image_pair(encoder, fusion, wrist_img, front_img, device):
             wrist_img = wrist_img.unsqueeze(0)
             front_img = front_img.unsqueeze(0)
 
-        z_wrist  = encoder.encode(wrist_img.to(device))
-        z_front  = encoder.encode(front_img.to(device))
+        z_wrist  = encoder.encode(wrist_img)      # transfert + preprocessing sur GPU
+        z_front  = encoder.encode(front_img)
         z_fused  = fusion(z_wrist, z_front)
     return z_fused.squeeze(0)
+
+
+def make_planner(predictor, action_dim, args, hw):
+    cem_cfg = CEMConfig(
+        horizon=args.horizon,
+        n_samples=args.n_samples,
+        n_elites=args.n_elites,
+        n_iterations=args.n_iter,
+        action_dim=action_dim,
+        cost_type="cosine",
+        precision=args.precision or hw["precision"],
+        rollout_chunk=args.rollout_chunk,
+    )
+    planner = CEMPlanner(predictor, cem_cfg)
+    print(f"[CEM] n_samples={args.n_samples} horizon={args.horizon} "
+          f"iter={args.n_iter} chunk={args.rollout_chunk or 'all'} "
+          f"autocast={planner.amp_dtype or 'off'}")
+    return planner
+
+
+def timed_plan(planner, z_current, z_goal):
+    """Plan + latence (warmup pour ne pas mesurer l'init CUDA)."""
+    if planner.device.type == "cuda":
+        planner.plan(z_current, z_goal)
+        torch.cuda.synchronize()
+    reset_peak_vram()
+    t0 = time.time()
+    actions, diag = planner.plan(z_current, z_goal, return_diagnostics=True)
+    if planner.device.type == "cuda":
+        torch.cuda.synchronize()
+    latency_ms = (time.time() - t0) * 1000
+    print(f"Planning latency : {latency_ms:.0f} ms  |  VRAM pic : {peak_vram_gb():.2f} GB")
+    return actions, diag
 
 
 def demo_from_dataset(args, encoder, fusion, predictor, device):
@@ -128,6 +172,9 @@ def demo_from_dataset(args, encoder, fusion, predictor, device):
 
     print(f"  État courant : idx={base_idx}, episode={current_sample['episode_idx']}")
     print(f"  État goal    : idx={goal_idx}, episode={goal_sample['episode_idx']}")
+    if current_sample["episode_idx"] != goal_sample["episode_idx"]:
+        print("  [ATTENTION] current et goal ne sont pas dans le même épisode — "
+              "réduire --goal-offset ou changer --demo-idx.")
 
     z_current = encode_image_pair(
         encoder, fusion,
@@ -154,9 +201,10 @@ def main():
     parser.add_argument("--fallback-ckpt",
                         default="results/checkpoints/predictor_simu.pt",
                         help="Si pas de LoRA, charger le predictor sim seul")
-    parser.add_argument("--dataset-id", default="divisio74/duck_dataset_v3")
-    parser.add_argument("--wrist-key",  default="observation.images.wrist")
-    parser.add_argument("--global-key", default="observation.images.front")
+    parser.add_argument("--dataset-id", default=None,
+                        help="Défaut : dataset.hf_id de la config")
+    parser.add_argument("--wrist-key",  default=None)
+    parser.add_argument("--global-key", default=None)
     parser.add_argument("--demo-idx",    type=int, default=0,
                         help="Frame de départ dans le dataset")
     parser.add_argument("--goal-offset", type=int, default=30,
@@ -165,11 +213,20 @@ def main():
     parser.add_argument("--n-samples",   type=int, default=200)
     parser.add_argument("--n-elites",    type=int, default=20)
     parser.add_argument("--n-iter",      type=int, default=3)
+    parser.add_argument("--rollout-chunk", type=int, default=0,
+                        help="Candidats déroulés par passe (0 = tous). "
+                             "Ex: --n-samples 4000 --rollout-chunk 1000")
+    parser.add_argument("--precision", default=None,
+                        help="auto (bf16 sur GPU) / fp32 pour les rollouts CEM")
     args = parser.parse_args()
 
     cfg = load_config(ROOT / args.config)
     set_seed(cfg["seed"])
+    hw = setup_hardware(cfg)
     log_environment()
+    args.dataset_id = args.dataset_id or cfg["dataset"]["hf_id"]
+    args.wrist_key = args.wrist_key or cfg["dataset"]["wrist_key"]
+    args.global_key = args.global_key or cfg["dataset"]["global_key"]
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"\nDevice : {device}")
@@ -177,18 +234,20 @@ def main():
     # === Charger DINOv3 ===
     print("\n--- Chargement DINOv3 ---")
     enc_cfg = DINOv3Config(
-        family=cfg["encoder"].get("family", "dinov2"),
+        family=cfg["encoder"].get("family", "dinov3"),
         size=cfg["encoder"]["size"],
         image_size=cfg["encoder"]["image_size"],
+        dtype=cfg["encoder"].get("dtype", "auto"),
+        attn_implementation=cfg["encoder"].get("attn_implementation", "sdpa"),
     )
     encoder = DINOv3Encoder(enc_cfg)
 
     # === Charger le predictor (avec LoRA si dispo, sinon sans) ===
     print("\n--- Chargement du predictor ---")
-    ckpt_path = ROOT / (args.predictor_ckpt or args.lora_ckpt)
+    ckpt_path = resolve(args.predictor_ckpt or args.lora_ckpt)
     if not ckpt_path.exists():
         # Fallback sur le predictor sim seul
-        ckpt_path = ROOT / args.fallback_ckpt
+        ckpt_path = resolve(args.fallback_ckpt)
 
     if not ckpt_path.exists():
         print(f"\n[ATTENTION] Aucun checkpoint trouvé.")
@@ -196,10 +255,13 @@ def main():
         print("\nCette démo va utiliser un predictor random init pour montrer")
         print("le pipeline. Les actions n'auront aucun sens fonctionnel,")
         print("c'est juste pour valider l'inférence end-to-end.\n")
-        run_random_demo(encoder, args, device, cfg)
+        run_random_demo(encoder, args, device, cfg, hw)
         return
 
     predictor, fusion, meta = load_predictor_with_lora(ckpt_path, device)
+    if encoder.embed_dim != meta["embed_dim"]:
+        sys.exit(f"[ERREUR] embed_dim encodeur ({encoder.embed_dim}) != "
+                 f"checkpoint ({meta['embed_dim']}) — mauvaise size/famille ?")
     print(f"Checkpoint   : {ckpt_path}")
     print(f"  Fusion     : {meta['fusion_name']}")
     print(f"  LoRA       : {'OUI' if meta['has_lora'] else 'non'}")
@@ -212,20 +274,8 @@ def main():
 
     # === CEM Planner ===
     print("\n--- Planning avec CEM ---")
-    cem_cfg = CEMConfig(
-        horizon=args.horizon,
-        n_samples=args.n_samples,
-        n_elites=args.n_elites,
-        n_iterations=args.n_iter,
-        action_dim=meta["action_dim"],
-        cost_type="cosine",
-    )
-    planner = CEMPlanner(predictor, cem_cfg)
-
-    t0 = time.time()
-    actions, diag = planner.plan(z_current, z_goal, return_diagnostics=True)
-    latency_ms = (time.time() - t0) * 1000
-    print(f"Planning latency : {latency_ms:.0f} ms")
+    planner = make_planner(predictor, meta["action_dim"], args, hw)
+    actions, diag = timed_plan(planner, z_current, z_goal)
     print(f"Actions shape    : {tuple(actions.shape)}")
     print(f"Best cost final  : {diag['best_cost'][-1]:.5f}")
     print(f"Cost evolution   : {[round(c, 5) for c in diag['best_cost']]}")
@@ -238,7 +288,7 @@ def main():
     print("\nNote : Si predictor pas encore entraîné, la différence sera élevée.")
 
 
-def run_random_demo(encoder, args, device, cfg):
+def run_random_demo(encoder, args, device, cfg, hw):
     """Démo avec un predictor random (pour valider le pipeline sans entraînement)."""
     from src.data import LeRobotDataConfig, LeRobotPairsDataset
 
@@ -252,16 +302,16 @@ def run_random_demo(encoder, args, device, cfg):
 
     # Prendre une frame pour estimer les dims
     sample = dataset[0]
-    z_wrist = encoder.encode(sample["wrist_t"].unsqueeze(0).to(device))
+    z_wrist = encoder.encode(sample["wrist_t"].unsqueeze(0))
     embed_dim = z_wrist.shape[-1]
-    n_patches = z_wrist.shape[1]
+    action_dim = sample["action"].shape[-1]
 
     # Predictor random
     pred_cfg = PredictorConfig(
         embed_dim=embed_dim,
-        action_dim=6,
+        action_dim=action_dim,
         n_layers=4,
-        n_heads=6,
+        n_heads=6 if embed_dim % 6 == 0 else 8,
     )
     predictor = WorldModelPredictor(pred_cfg).to(device).eval()
 
@@ -282,15 +332,8 @@ def run_random_demo(encoder, args, device, cfg):
     print(f"z_goal    : {tuple(z_goal.shape)}")
 
     # CEM (avec predictor random — juste pour valider le flow)
-    cem_cfg = CEMConfig(
-        horizon=args.horizon,
-        n_samples=args.n_samples,
-        n_elites=args.n_elites,
-        n_iterations=args.n_iter,
-        action_dim=6,
-    )
-    planner = CEMPlanner(predictor, cem_cfg)
-    actions = planner.plan(z_current, z_goal)
+    planner = make_planner(predictor, action_dim, args, hw)
+    actions, _ = timed_plan(planner, z_current, z_goal)
     print(f"\nActions générées : {tuple(actions.shape)}")
     print(f"Action[0]        : {actions[0].cpu().numpy().round(3)}")
     print("\n[OK] Pipeline d'inférence end-to-end fonctionnel.")
