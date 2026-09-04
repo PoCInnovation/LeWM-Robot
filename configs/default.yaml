@@ -34,6 +34,30 @@ hardware:
   num_workers: "auto"                   # DataLoader d'encodage : auto (= cœurs - 2, max 8)
   compile: false                        # torch.compile du predictor (04/05) — opt-in
 
+augmentation:
+  enabled: true
+  intensity: 1.0
+  passes: 1
+  include_original: true
+  share_across_cameras: true
+
+  techniques:
+    crop:   true
+    blur:   true
+    color:  true
+    sensor: true
+
+  strength:
+    crop_scale_min: 0.75
+    crop_scale_max: 0.95
+    blur_ksizes: [3, 5, 7]
+    blur_sigma_min: 0.5
+    blur_sigma_max: 1.5
+    color_brightness: 0.2
+    color_contrast: 0.2
+    color_saturation: 0.2
+    sensor_sigma: 0.01
+
 # Configuration des fusions à tester ( pour le cross cam)
 fusion:
   strategies_to_test:

@@ -36,6 +36,7 @@ from tqdm import tqdm
 
 from src.encoders import DINOv3Config, DINOv3Encoder
 from src.data import LeRobotDataConfig, LeRobotPairsDataset
+from src.augmentation import OnlineAugConfig
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.device import resolve_num_workers, peak_vram_gb, reset_peak_vram
 
@@ -63,6 +64,14 @@ def main():
     parser.add_argument("--max-pairs", type=int, default=None,
                         help="Limite le nombre de paires (pour test rapide). "
                              "None = toutes les paires.")
+    parser.add_argument("--aug-passes", type=int, default=None,
+                        help="Passes AUGMENTÉES en plus de la passe propre. "
+                             "Chaque passe re-tire des paramètres au hasard, "
+                             "donc produit des variations différentes. "
+                             "Défaut : augmentation.passes de la config.")
+    parser.add_argument("--no-augment", action="store_true",
+                        help="Force l'encodage sans augmentation (une seule "
+                             "passe propre), quelle que soit la config.")
     args = parser.parse_args()
 
     # Charger config
@@ -107,6 +116,18 @@ def main():
     reset_peak_vram()
     encoder = DINOv3Encoder(enc_cfg)
 
+    aug_cfg = OnlineAugConfig.from_dict(cfg.get("augmentation"), seed=cfg["seed"])
+    if args.aug_passes is not None:
+        aug_cfg.passes = max(0, args.aug_passes)
+    if args.no_augment:
+        aug_cfg.enabled = False
+    augment_on = aug_cfg.enabled and aug_cfg.passes > 0
+    n_passes = 1 + (aug_cfg.passes if augment_on else 0)
+    print(aug_cfg.describe())
+    if not augment_on:
+        print("[Augmentation] désactivée — une seule passe propre.")
+    print()
+
     data_cfg = LeRobotDataConfig(
         dataset_id=cfg["dataset"]["hf_id"],
         wrist_key=cfg["dataset"]["wrist_key"],
@@ -115,8 +136,10 @@ def main():
         proprio_key=cfg["dataset"]["proprio_key"],
         delta_timesteps=cfg["dataset"]["delta_timesteps"],
         cache_dir=cfg["dataset"]["cache_dir"],
+        augment=aug_cfg,
     )
-    dataset = LeRobotPairsDataset(data_cfg)
+    base_dataset = LeRobotPairsDataset(data_cfg)
+    dataset = base_dataset
     if args.max_pairs is not None and args.max_pairs < len(dataset):
         from torch.utils.data import Subset
         # Subsample en gardant des paires de plusieurs épisodes (stride)
@@ -128,34 +151,48 @@ def main():
                          shuffle=False, pin_memory=on_gpu)
     if num_workers > 0:
         loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
-    loader = DataLoader(dataset, **loader_kwargs)
 
+    n_rows = len(dataset) * n_passes
+    est_gb = n_rows * 4 * encoder.num_patches * encoder.embed_dim * 4 / 1e9
     print(f"Total paires : {len(dataset)}")
-    print(f"Batches      : {len(loader)}\n")
+    print(f"Passes       : {n_passes} (1 propre"
+          f"{f' + {n_passes - 1} augmentées' if n_passes > 1 else ''})")
+    print(f"Lignes finales : {n_rows}")
+    print(f"Taille estimée du .pt : {est_gb:.1f} GB "
+          f"(4 images x {encoder.num_patches} patches x {encoder.embed_dim} dims x fp32)\n")
 
     # === Encode ===
     buf_z_wrist_t, buf_z_global_t = [], []
     buf_z_wrist_t1, buf_z_global_t1 = [], []
     buf_action, buf_proprio = [], []
     buf_episode, buf_frame = [], []
+    buf_pair, buf_is_aug, buf_recipe = [], [], []
 
     t0 = time.time()
     with torch.inference_mode():
-        for batch in tqdm(loader, desc="Encoding"):
-            buf_z_wrist_t.append(encoder.encode(batch["wrist_t"]).cpu())
-            buf_z_global_t.append(encoder.encode(batch["global_t"]).cpu())
-            buf_z_wrist_t1.append(encoder.encode(batch["wrist_t1"]).cpu())
-            buf_z_global_t1.append(encoder.encode(batch["global_t1"]).cpu())
+        for pass_idx in range(n_passes):
+            base_dataset.set_augment(pass_idx > 0)
+            loader = DataLoader(dataset, **loader_kwargs)
+            desc = ("Encoding (propre)" if pass_idx == 0
+                    else f"Encoding (augmentée {pass_idx}/{n_passes - 1})")
+            for batch in tqdm(loader, desc=desc):
+                buf_z_wrist_t.append(encoder.encode(batch["wrist_t"]).cpu())
+                buf_z_global_t.append(encoder.encode(batch["global_t"]).cpu())
+                buf_z_wrist_t1.append(encoder.encode(batch["wrist_t1"]).cpu())
+                buf_z_global_t1.append(encoder.encode(batch["global_t1"]).cpu())
 
-            buf_action.append(batch["action"])
-            buf_proprio.append(batch["proprio"])
-            buf_episode.append(batch["episode_idx"])
-            buf_frame.append(batch["frame_idx"])
+                buf_action.append(batch["action"])
+                buf_proprio.append(batch["proprio"])
+                buf_episode.append(batch["episode_idx"])
+                buf_frame.append(batch["frame_idx"])
+                buf_pair.append(batch["pair_id"])
+                buf_is_aug.append(batch["is_augmented"])
+                buf_recipe.append(batch["recipe_idx"])
 
     dt = time.time() - t0
-    n_images = 4 * len(dataset)
+    n_images = 4 * n_rows
     print(f"\nEncodage terminé en {dt:.1f}s "
-          f"({dt / len(dataset) * 1000:.1f} ms/paire, {n_images / dt:.0f} img/s)")
+          f"({dt / max(1, n_rows) * 1000:.1f} ms/paire, {n_images / dt:.0f} img/s)")
     if on_gpu:
         print(f"VRAM pic : {peak_vram_gb():.2f} GB  "
               f"(si le GPU est loin de 100 % dans nvidia-smi, augmenter "
@@ -172,6 +209,11 @@ def main():
             "proprio":      torch.cat(buf_proprio),
             "episode_idx":  torch.cat(buf_episode),
             "frame_idx":    torch.cat(buf_frame),
+            "pair_id":      torch.cat(buf_pair),
+            "is_augmented": torch.cat(buf_is_aug),
+            "recipe_idx":   torch.cat(buf_recipe),
+            "aug_passes":   n_passes - 1,
+            "aug_config":   aug_cfg.__dict__ if augment_on else None,
             "embed_dim":    encoder.embed_dim,
             "num_patches":  encoder.num_patches,
             "encoder_family": family,

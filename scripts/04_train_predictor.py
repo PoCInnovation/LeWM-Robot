@@ -35,6 +35,7 @@ from tqdm import tqdm
 from src.predictor import WorldModelPredictor, PredictorConfig
 from src.fusion import make_fusion
 from src.config import load_config, set_seed, log_environment, setup_hardware
+from src.data import split_train_val, describe_split
 from src.device import (resolve_amp_dtype, place_tensors, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
                         peak_vram_gb, reset_peak_vram)
@@ -131,11 +132,10 @@ def main():
     predictor = maybe_compile(predictor, use_compile)
 
     # === Split train/val ===
-    perm = torch.randperm(n, generator=torch.Generator().manual_seed(cfg["seed"]))
-    val_size = max(1, n // 5)
-    val_idx, train_idx = perm[:val_size], perm[val_size:]
+    train_idx, val_idx = split_train_val(data, seed=cfg["seed"],
+                                         val_fraction=float(cfg.get("dataset", {}).get("val_fraction", 0.2)))
 
-    print(f"\nSplit : {len(train_idx)} train / {len(val_idx)} val")
+    print(f"\nSplit : {describe_split(data, train_idx, val_idx)}")
 
     # === Optimizer ===
     params = list(fusion.parameters()) + list(raw_predictor.parameters())
