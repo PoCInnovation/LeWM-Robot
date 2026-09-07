@@ -42,11 +42,11 @@ class CEMConfig:
     cost_type: str = "cosine"           # "cosine" / "mse"
     elite_momentum: float = 0.0         # 0 = full refit, >0 = lisser entre iter
     device: str = "auto"
-    # GPU (RTX 4090) :
+    # GPU (RTX 5090) :
     #   precision     : "auto" = rollouts en autocast bf16 sur CUDA (x2 sur le
     #                   predictor, coût calculé en fp32) ; "fp32" pour désactiver
     #   rollout_chunk : nb de candidats déroulés par passe (0 = tous d'un coup).
-    #                   Permet n_samples=2000-5000 sans OOM : la VRAM du rollout
+    #                   Borne la mémoire des candidats ; ajuster si OOM. La VRAM
     #                   ~ chunk × N_tokens × D × n_layers.
     precision: str = "auto"
     rollout_chunk: int = 0

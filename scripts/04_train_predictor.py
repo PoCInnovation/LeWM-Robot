@@ -6,11 +6,11 @@ Phase A du training :
     - Loss : MSE one-step z_t → z_t+1
     - Output : checkpoint predictor_simu.pt
 
-GPU (RTX 4090, 24 GB) :
+GPU (RTX 5090, 32 GB) :
     - latents hébergés en VRAM (hardware.data_device: auto) → zéro transfert ;
     - autocast bf16 + TF32, AdamW fused, --compile (torch.compile) opt-in ;
-    - --batch-size 64 par défaut : DINOv3-small (392 tokens, 6 couches) tient
-      à 256 ; DINOv3-base (768) tient à 128 ; réduire si OOM ;
+    - --batch-size 64 par défaut ; mesurer 32/64/128/256 avec le benchmark
+      avant d’augmenter (la mémoire dépend de la fusion et de l’encodeur) ;
     - pic VRAM + durée loggés par epoch (dans le checkpoint, clé history).
 
 Usage:

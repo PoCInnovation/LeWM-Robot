@@ -1,5 +1,5 @@
 """
-Réglages matériels pour GPU NVIDIA (cible : RTX 4090, Ada Lovelace, 24 GB).
+Réglages matériels pour GPU NVIDIA (cible : RTX 5090, Blackwell, 32 GB).
 
 Tout ce qui dépend du device est centralisé ici, pour que les scripts n'aient
 qu'à appeler `configure_backend()` en tête puis `resolve_amp_dtype()` :
@@ -7,10 +7,9 @@ qu'à appeler `configure_backend()` en tête puis `resolve_amp_dtype()` :
     - TF32 pour les matmuls/convs fp32 (gratuit sur Ampere+ : ~2-3x sur les
       produits matriciels fp32, précision largement suffisante ici) ;
     - cuDNN benchmark (shapes fixes → autotune des kernels) ;
-    - autocast bf16 si le GPU le supporte (Ampere+, donc 4090 : oui) ;
+    - autocast bf16 si le GPU le supporte (Ampere+, donc 5090 : oui) ;
     - choix du device pour héberger les latents pré-encodés (VRAM si ça tient :
-      sur 24 GB, un dataset DINOv3-small entier tient et supprime le goulot
-      CPU → GPU du training) ;
+      selon la mémoire libre mesurée, avec une réserve pour le training) ;
     - nombre de workers DataLoader ;
     - AdamW fused, torch.compile opt-in ;
     - suivi de la VRAM (pic alloué) pour calibrer les batch sizes.
@@ -20,6 +19,7 @@ Reste 100 % fonctionnel sur CPU (tout devient no-op / fp32).
 
 from __future__ import annotations
 import os
+import re
 from typing import Dict, Iterable, Optional, Tuple, Union
 
 import torch
@@ -27,11 +27,38 @@ import torch
 DeviceLike = Union[str, torch.device]
 
 
+def validate_cuda_runtime(require_cuda: bool = False) -> None:
+    """Refuse un runtime trop ancien pour Blackwell avant de charger les modèles."""
+    if not torch.cuda.is_available():
+        if require_cuda:
+            raise RuntimeError(
+                "GPU CUDA indisponible. Vérifier nvidia-smi et installer les "
+                "roues PyTorch CUDA avec make install.")
+        return
+    if torch.version.hip is not None:
+        return
+    major, minor = torch.cuda.get_device_capability()
+    if major < 10:
+        return
+    def version_pair(value):
+        match = re.match(r"(\d+)\.(\d+)", str(value))
+        return tuple(map(int, match.groups())) if match else (0, 0)
+
+    if (version_pair(torch.__version__) < (2, 7)
+            or version_pair(torch.version.cuda) < (12, 8)):
+        raise RuntimeError(
+            f"GPU Blackwell sm_{major}{minor} : PyTorch >= 2.7 compilé avec "
+            f"CUDA >= 12.8 requis (installé : torch {torch.__version__}, "
+            f"CUDA {torch.version.cuda}). Lancer make install ; "
+            "les roues cu124/cu126 ne conviennent pas à la RTX 5090.")
+
+
 def configure_backend(tf32: bool = True, cudnn_benchmark: bool = True,
                       verbose: bool = True) -> None:
     """Active TF32 + cuDNN benchmark sur CUDA. No-op sur CPU."""
     if not torch.cuda.is_available():
         return
+    validate_cuda_runtime()
     if tf32:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
@@ -55,7 +82,7 @@ def get_device(requested: str = "auto") -> torch.device:
 
 
 def bf16_supported() -> bool:
-    """bf16 natif (Ampere+ ; la 4090 est Ada = oui)."""
+    """bf16 natif (Ampere+ ; la 5090 est Blackwell = oui)."""
     if not torch.cuda.is_available():
         return False
     try:
@@ -114,9 +141,8 @@ def autocast_ctx(device: DeviceLike, amp_dtype: Optional[torch.dtype]):
 def resolve_num_workers(requested: Union[int, str, None] = "auto",
                         cap: int = 8) -> int:
     """
-    Workers DataLoader. 'auto' = min(cap, cœurs - 2). Le décodage vidéo
-    (encodage) est le goulot : sur une machine 4090 typique (8-16 cœurs),
-    6-8 workers saturent le GPU en DINOv3-small.
+    Workers DataLoader. 'auto' = min(cap, cœurs - 2).
+    Ajuster selon le CPU et le stockage en mesurant le débit d’encodage.
     """
     if requested is None or requested == "auto":
         n = os.cpu_count() or 4
@@ -213,8 +239,7 @@ def maybe_compile(module: torch.nn.Module, enabled: bool,
                   mode: Optional[str] = None) -> torch.nn.Module:
     """
     torch.compile opt-in. Renvoie le module compilé (ou l'original si
-    désactivé / indisponible). Sur 4090 avec des shapes fixes : ~1.3-1.8x sur
-    le predictor. Le state_dict doit être pris sur le module ORIGINAL (le
+    désactivé / indisponible). Le gain doit être mesuré sur la machine cible. Le state_dict doit être pris sur le module ORIGINAL (le
     compilé préfixe les clés par `_orig_mod.`) — cf. unwrap().
     """
     if not enabled:

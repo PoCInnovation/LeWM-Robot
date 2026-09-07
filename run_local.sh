@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════
-# CHAÎNE COMPLÈTE EN LOCAL — machine avec une RTX 4090 (ou tout GPU NVIDIA).
+# CHAÎNE COMPLÈTE EN LOCAL — machine avec une RTX 5090 (ou tout GPU NVIDIA).
 # Les étapes s'enchaînent dans ce shell, `set -e` arrête tout à la
 # première erreur, chaque étape a son log dans logs/.
 #
@@ -32,6 +32,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PY_CONFIG="${PY_CONFIG:-configs/default.yaml}"
+PYTHON="${PYTHON:-$(if [ -x .venv/bin/python ]; then echo .venv/bin/python; else echo python3; fi)}"
 REAL_DATASET="${REAL_DATASET:-}"
 TRAIN_ARGS="${TRAIN_ARGS:---n-epochs 30 --batch-size 64}"
 LORA_ARGS="${LORA_ARGS:---lora-rank 8 --n-epochs 20 --batch-size 32}"
@@ -39,7 +40,7 @@ LOG_DIR="${LOG_DIR:-logs}"
 mkdir -p "$LOG_DIR"
 STAMP=$(date +%Y%m%d_%H%M%S)
 
-DATASET_ID="${DATASET_ID:-$(python - "$PY_CONFIG" <<'EOF'
+DATASET_ID="${DATASET_ID:-$("$PYTHON" - "$PY_CONFIG" <<'EOF'
 import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["dataset"]["hf_id"])
 EOF
 )}"
@@ -78,12 +79,14 @@ echo "   ENCODED  : $ENCODED"
 echo "   SMOKE    : ${SMOKE:-0}"
 echo "══════════════════════════════════════════════════════"
 
+run check_gpu "$PYTHON" scripts/00_check_gpu.py --config "$PY_CONFIG"
+
 # ── 1. sanity check encodeur ──────────────────────────────────────────
-run test_encoder python scripts/01_test_dinov3.py --config "$PY_CONFIG"
+run test_encoder "$PYTHON" scripts/01_test_dinov3.py --config "$PY_CONFIG"
 
 # ── 2. encodage ───────────────────────────────────────────────────────
 if [ "${SKIP_ENCODE:-0}" != "1" ] || [ ! -f "$ENCODED" ]; then
-    run encode python scripts/02_encode_dataset.py --config "$PY_CONFIG" \
+    run encode "$PYTHON" scripts/02_encode_dataset.py --config "$PY_CONFIG" \
         --dataset-id "$DATASET_ID" --output "$ENCODED" $ENC_ARGS
 else
     echo "[run_local] SKIP_ENCODE=1 — encodage sauté ($ENCODED)."
@@ -91,10 +94,10 @@ fi
 
 # ── 3. comparaison des fusions ────────────────────────────────────────
 if [ "${SKIP_FUSION:-0}" != "1" ]; then
-    run fusion python scripts/03_compare_fusion.py --config "$PY_CONFIG" \
+    run fusion "$PYTHON" scripts/03_compare_fusion.py --config "$PY_CONFIG" \
         --encoded-data "$ENCODED" $FUSION_EPOCHS
     if [ -z "${FUSION:-}" ]; then
-        FUSION=$(python - "$PY_CONFIG" <<'EOF'
+        FUSION=$("$PYTHON" - "$PY_CONFIG" <<'EOF'
 import json, sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1]))
 r = json.load(open(cfg["paths"].get("fusion_results", "results/fusion_comparison.json")))
@@ -109,24 +112,24 @@ fi
 echo "[run_local] Fusion retenue : $FUSION"
 
 # ── 4. training predictor ─────────────────────────────────────────────
-run train python scripts/04_train_predictor.py --config "$PY_CONFIG" \
+run train "$PYTHON" scripts/04_train_predictor.py --config "$PY_CONFIG" \
     --encoded-data "$ENCODED" --output "$CKPT_SIM" --fusion "$FUSION" $TRAIN_ARGS
 
 # ── 5. LoRA (optionnel) ───────────────────────────────────────────────
 DEMO_CKPT="$CKPT_SIM"
 if [ -n "$REAL_DATASET" ]; then
     if [ "${SKIP_ENCODE:-0}" != "1" ] || [ ! -f "$REAL_ENCODED" ]; then
-        run encode_real python scripts/02_encode_dataset.py --config "$PY_CONFIG" \
+        run encode_real "$PYTHON" scripts/02_encode_dataset.py --config "$PY_CONFIG" \
             --dataset-id "$REAL_DATASET" --output "$REAL_ENCODED" $ENC_ARGS
     fi
-    run lora python scripts/05_train_lora.py --config "$PY_CONFIG" \
+    run lora "$PYTHON" scripts/05_train_lora.py --config "$PY_CONFIG" \
         --real-data "$REAL_ENCODED" --predictor-ckpt "$CKPT_SIM" \
         --output "$CKPT_REAL" $LORA_ARGS
     DEMO_CKPT="$CKPT_REAL"
 fi
 
 # ── 6. démo CEM ───────────────────────────────────────────────────────
-run demo python scripts/06_inference_demo.py --config "$PY_CONFIG" \
+run demo "$PYTHON" scripts/06_inference_demo.py --config "$PY_CONFIG" \
     --dataset-id "$DATASET_ID" --predictor-ckpt "$DEMO_CKPT" $DEMO_ARGS
 
 cat <<EOF

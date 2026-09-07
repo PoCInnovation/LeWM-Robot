@@ -9,8 +9,8 @@ Phase B du training :
     - Données : démos réelles pré-encodées (depuis 02_encode_dataset)
     - Output : checkpoint predictor_real.pt avec LoRA dedans
 
-GPU (RTX 4090) : latents en VRAM, autocast bf16, AdamW fused, --compile
-opt-in. Le LoRA (quelques centaines de k params) tourne en quelques minutes.
+GPU (RTX 5090) : latents en VRAM, autocast bf16, AdamW fused, --compile
+opt-in. Mesurer le temps nécessaire avec 07_benchmark.py.
 
 Usage:
     python scripts/05_train_lora.py --config configs/default.yaml

@@ -81,7 +81,7 @@ def log_environment() -> None:
 
 def hardware_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Section `hardware` du YAML avec des défauts sûrs (cible RTX 4090).
+    Section `hardware` du YAML avec des défauts sûrs (cible RTX 5090).
 
     Clés :
         tf32            : bool   — TF32 pour les matmuls fp32 (défaut True)

@@ -1,5 +1,5 @@
 """
-Benchmark chronométré sur le GPU local (RTX 4090) → estimation précise du
+Benchmark chronométré sur le GPU local (RTX 5090) → estimation précise du
 temps de chaque étape du pipeline pour un run complet.
 
 Principe : on lance de VRAIS mini-entraînements (mêmes modules, même boucle,
@@ -12,7 +12,7 @@ Ce qui est mesuré :
        si --dataset-id est donné, sur le VRAI DataLoader (décodage vidéo
        inclus — c'est le goulot réel).
     2. Fusion + probe (03) : s/step pour chaque stratégie.
-    3. Predictor (04) : 3 mini-trains (batch 32 / 64 / 128 par défaut) →
+    3. Predictor (04) : 4 mini-trains (batch 32 / 64 / 128 / 256 par défaut) →
        s/epoch, temps total, VRAM pic, batch max recommandé.
     4. LoRA (05) : s/step.
     5. CEM (06) : latence pour n_samples ∈ {200, 1000, 2000}.
@@ -26,11 +26,12 @@ Usage:
     python scripts/07_benchmark.py [--config configs/default.yaml]
         [--encoded-data results/encoded/encoded_data.pt] [--n-pairs 15000]
         [--dataset-id divisio74/duck_dataset_v3]      # mesure le décodage réel
-        [--batch-sizes 32,64,128] [--steps 30] [--n-epochs 30]
+        [--batch-sizes 32,64,128,256] [--steps 30] [--n-epochs 30]
         [--lora-epochs 20] [--fusion-epochs 30] [--output results/benchmark.json]
 """
 
 import sys
+import gc
 import json
 import math
 import time
@@ -252,7 +253,7 @@ def bench_fusion(cfg, args, device, amp, tensors, n_pairs):
 
 
 # ────────────────────────────────────────────────────────────────
-# 3. Predictor (04) — 3 mini-trains
+# 3. Predictor (04) — balayage des tailles de batch
 # ────────────────────────────────────────────────────────────────
 
 def bench_predictor(cfg, args, device, amp, tensors, n_pairs):
@@ -264,7 +265,7 @@ def bench_predictor(cfg, args, device, amp, tensors, n_pairs):
     n_train, n_val = int(0.8 * n_pairs), n_pairs - int(0.8 * n_pairs)
     results = {}
     best = None
-    for bs in args.batch_sizes:
+    def measure_batch(bs):
         set_seed(cfg["seed"])
         fusion = make_fusion(args.fusion, dim=D).to(device).train()
         pred_cfg = PredictorConfig(embed_dim=D, action_dim=A, n_layers=args.n_layers,
@@ -293,28 +294,32 @@ def bench_predictor(cfg, args, device, amp, tensors, n_pairs):
                 pred = predictor(fusion(zw, zg), act)
                 nn.functional.mse_loss(pred.float(), fusion(zw1, zg1).float())
 
-        try:
-            reset_peak_vram()
-            dt_train = time_steps(train_step, 5, args.steps)
-            dt_val = time_steps(val_step, 2, max(3, args.steps // 3))
-        except torch.cuda.OutOfMemoryError:
-            print(f"  batch {bs:>4} : OUT OF MEMORY → batch max < {bs}")
-            results[bs] = {"oom": True}
-            del fusion, predictor, opt
-            torch.cuda.empty_cache()
-            continue
+        reset_peak_vram()
+        dt_train = time_steps(train_step, 5, args.steps)
+        fusion.eval(); predictor.eval()
+        dt_val = time_steps(val_step, 2, max(3, args.steps // 3))
         vram = peak_vram_gb()
         s_epoch = dt_train * math.ceil(n_train / bs) + dt_val * math.ceil(n_val / bs)
-        est = s_epoch * args.n_epochs
-        results[bs] = {"s_per_train_step": dt_train, "s_per_val_step": dt_val,
-                       "s_per_epoch": s_epoch, "estimate_s": est,
-                       "peak_vram_gb": vram, "samples_per_s": bs / dt_train}
-        print(f"  batch {bs:>4} : {dt_train * 1000:6.1f} ms/step "
-              f"({bs / dt_train:6.0f} ech/s) | epoch {fmt(s_epoch):>9} | "
-              f"{args.n_epochs} epochs : {fmt(est):>9} | VRAM pic {vram:.1f} GB")
-        if best is None or est < results[best]["estimate_s"]:
-            best = bs
-        del fusion, predictor, opt
+        return {"s_per_train_step": dt_train, "s_per_val_step": dt_val,
+                "s_per_epoch": s_epoch, "estimate_s": s_epoch * args.n_epochs,
+                "peak_vram_gb": vram, "samples_per_s": bs / dt_train}
+
+    for bs in args.batch_sizes:
+        try:
+            result = measure_batch(bs)
+        except torch.cuda.OutOfMemoryError:
+            print(f"  batch {bs:>4} : OUT OF MEMORY — essai suivant")
+            results[bs] = {"oom": True}
+        else:
+            results[bs] = result
+            print(f"  batch {bs:>4} : {result['s_per_train_step'] * 1000:.1f} ms/step "
+                  f"| epoch {fmt(result['s_per_epoch'])} | "
+                  f"total {fmt(result['estimate_s'])} | "
+                  f"VRAM pic {result['peak_vram_gb']:.1f} GB")
+            if best is None or result["estimate_s"] < results[best]["estimate_s"]:
+                best = bs
+        # Les modèles, gradients, optimiseur et traceback OOM sont hors portée.
+        gc.collect()
         if device == "cuda":
             torch.cuda.empty_cache()
     if best is not None:
@@ -421,7 +426,7 @@ def main():
                         help="Nb de paires des démos réelles pour le LoRA (défaut : n-pairs)")
     parser.add_argument("--dataset-id", default=None,
                         help="Mesurer aussi le pipeline d'encodage réel (décodage vidéo)")
-    parser.add_argument("--batch-sizes", default="32,64,128",
+    parser.add_argument("--batch-sizes", default="32,64,128,256",
                         help="Batch sizes des mini-trains du predictor")
     parser.add_argument("--steps", type=int, default=30,
                         help="Steps mesurés par mini-train (après 5 de warmup)")
@@ -450,7 +455,7 @@ def main():
     args.fusion_epochs = args.fusion_epochs or int(cfg.get("probe", {}).get("n_epochs", 30))
     if device == "cpu":
         print("[ATTENTION] Pas de GPU : les temps mesurés sont ceux du CPU, "
-              "pas d'une 4090.")
+              "pas d'une 5090.")
 
     print("=" * 64)
     print(f"BENCHMARK — {gpu_summary()}")

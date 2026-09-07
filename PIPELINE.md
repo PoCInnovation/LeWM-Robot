@@ -13,10 +13,10 @@ dans l'espace latent.
 
 ```
 .
-├── bench.sh                   UNE commande : install + benchmark chronométré (estimation 4090)
+├── bench.sh                   UNE commande : install + benchmark chronométré (estimation 5090)
 ├── Makefile                   make install / bench / smoke / run / test
 ├── requirements_wm.txt
-├── run_local.sh               Chaîne complète en local (machine RTX 4090) : 01 → 06
+├── run_local.sh               Chaîne complète en local (machine RTX 5090) : 01 → 06
 ├── configs/
 │   └── default.yaml           Config centralisée (encoder, dataset, hardware, fusion, probe)
 ├── src/
@@ -31,6 +31,7 @@ dans l'espace latent.
 │   ├── losses.py              MSE multi-step + cosine + DANN backup
 │   └── planner.py             CEM planner (autocast bf16, rollouts par chunks) + MPC controller
 ├── scripts/
+│   ├── 00_check_gpu.py              Vérifie runtime Blackwell et kernels SDPA/backward/AdamW
 │   ├── 01_test_dinov3.py            Sanity check encodeur (+ débit, cos-sim bf16/fp32)
 │   ├── 02_encode_dataset.py         Pré-encode dataset (bf16, workers auto, --output)
 │   ├── 03_compare_fusion.py         Compare les fusions (M1) — latents en VRAM
@@ -40,7 +41,7 @@ dans l'espace latent.
 │   └── 07_benchmark.py              Mini-trains chronométrés → estimation du temps d'un run complet
 ├── results/                   Outputs (encoded data, checkpoints, plots)
 ├── tests/                     pytest : adaptation GPU (CPU-only + 4 tests GPU)
-└── DEPLOYMENT.md              Guide machine RTX 4090 (install, run_local.sh, réglages, dépannage)
+└── DEPLOYMENT.md              Guide machine RTX 5090 (install, run_local.sh, réglages, dépannage)
 ```
 
 ## Setup
@@ -51,12 +52,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # Installe les dépendances (torch CUDA d'abord sur une machine NVIDIA)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements_wm.txt
 pip install git+https://github.com/huggingface/lerobot.git
 ```
 
-Machine RTX 4090 : voir `DEPLOYMENT.md`, puis `SMOKE=1 bash run_local.sh`
+Machine RTX 5090 : voir `DEPLOYMENT.md`, puis `SMOKE=1 bash run_local.sh`
 et `bash run_local.sh` (chaîne 01 → 06 sans rien d'autre à taper).
 
 ## Pipeline (Milestone 1 — fusion multi-camera)
@@ -87,7 +88,7 @@ make bench          # (= python scripts/07_benchmark.py ... avec log)
 - [x] CEM planner + MPC controller
 - [x] Scripts de training (04, 05) écrits et import-checks OK
 - [x] Script d'inférence end-to-end (06)
-- [x] Adaptation RTX 4090 : bf16/TF32, SDPA, latents en VRAM, `run_local.sh`, tests (`python -m pytest tests/`)
+- [x] Support logiciel RTX 5090 (validation matérielle à effectuer) : bf16/TF32, SDPA, latents en VRAM, `run_local.sh`, tests (`python -m pytest tests/`)
 - [ ] Encodage du dataset complet (à faire sur GPU)
 - [ ] Training predictor + LoRA (à faire sur GPU)
 - [ ] Setup Isaac Lab (Milestone 2)
@@ -105,7 +106,7 @@ make bench          # (= python scripts/07_benchmark.py ... avec log)
 
 ## Notes
 
-- Le code est **CPU-compatible** ; sur GPU NVIDIA (RTX 4090) tout est
+- Le code est **CPU-compatible** ; sur GPU NVIDIA (RTX 5090) tout est
   automatique via la section `hardware` de `configs/default.yaml`
   (précision, emplacement des latents, workers, compile).
 - L'encodeur lit `patch_size` et le nombre de register tokens depuis le

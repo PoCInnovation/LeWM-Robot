@@ -2,27 +2,35 @@
 
 World model action-conditionné pour le bras SO-101 : encodeur DINOv3 figé,
 fusion multi-caméra, predictor transformer, LoRA sim→réel et planner CEM.
-Cette branche (`feat/rtx4090`) est prête pour une machine **RTX 4090**.
+Cible matérielle : **RTX 5090 (Blackwell, 32 Go)**, avec PyTorch 2.10.0
++ torchvision 0.25.0 compilés pour CUDA 12.8. Validation sur GPU à effectuer
+sur la machine cible ; le pipeline reste utilisable sur CPU et RTX 4090.
 
-## Une seule commande : estimer le temps d'entraînement sur la 4090
+## Une seule commande : estimer le temps d'entraînement sur la 5090
 
 ```bash
 git clone git@github.com:PoCInnovation/LeWM-Robot.git && cd LeWM-Robot
 git checkout feat/rtx4090
-HF_TOKEN=hf_xxx bash bench.sh        # ou simplement : bash bench.sh
+make
 ```
 
-`bench.sh` crée le venv, installe torch CUDA + dépendances, vérifie le GPU,
-lance 2-3 mini-entraînements chronométrés (mêmes modules que le vrai
+`make` lance `bench.sh`, qui crée le venv, installe torch CUDA + dépendances, vérifie le GPU,
+lance quatre mini-entraînements chronométrés (mêmes modules que le vrai
 pipeline) et affiche l'estimation du temps de chaque étape + le total.
+
+Le token est lu automatiquement depuis `configs/hf_token.txt`, inclus dans
+le dépôt conformément au choix du projet. Aucune commande `hf auth login`
+n’est nécessaire. `HF_TOKEN` permet de le remplacer pour un lancement ;
+`HF_TOKEN_FILE` permet de choisir un autre fichier. Le token n’est pas inclus
+dans les logs ni dans l’archive du rapport.
 
 **À la fin, renvoyez-nous le fichier `results/benchmark_report_<date>.tar.gz`**
 (résumé, `benchmark.json`, log complet, `nvidia-smi`, versions des libs).
 
-Prérequis : driver NVIDIA récent (`nvidia-smi` fonctionne), Python ≥ 3.10,
+Prérequis : driver NVIDIA R570 ou plus récent compatible RTX 5090 (`nvidia-smi` fonctionne), Python ≥ 3.10,
 `ffmpeg` (`sudo apt install ffmpeg`), ~10 GB de disque, et le token HF
-fourni (`HF_TOKEN`, nécessaire pour DINOv3). Durée : ~5 min d'installation
-au premier lancement + ~3-5 min de benchmark. Relancer est instantané.
+configuré (nécessaire pour DINOv3). La durée dépend du réseau, du dataset et des paramètres du benchmark.
+L’installation est réutilisée aux lancements suivants.
 
 Variables : `N_EPOCHS=100 bash bench.sh`, `BATCH_SIZES=64,128,256`,
 `DATASET_ID=user/dataset`, `NO_DATASET=1` (pas de téléchargement).
@@ -30,12 +38,13 @@ Variables : `N_EPOCHS=100 bash bench.sh`, `BATCH_SIZES=64,128,256`,
 ## Ensuite
 
 ```bash
-make smoke      # pipeline miniature de bout en bout (~2-5 min)
+make check      # kernels CUDA réels puis chargement DINO
+make smoke      # pipeline miniature de bout en bout
 make run        # pipeline complet : encodage → fusions → predictor → démo CEM
 make help       # toutes les cibles
 ```
 
-Documentation : [DEPLOYMENT.md](./DEPLOYMENT.md) (machine 4090, réglages,
+Documentation : [DEPLOYMENT.md](./DEPLOYMENT.md) (machine 5090, réglages,
 dépannage) et [PIPELINE.md](./PIPELINE.md) (architecture, scripts, état).
 
 ## Get involved

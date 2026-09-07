@@ -16,9 +16,8 @@ Et démontre :
 Pour tester sans robot réel : prend deux frames du dataset (current = t0, goal = t30
 par exemple) et vérifie que le planner trouve des actions cohérentes.
 
-GPU (RTX 4090) : --n-samples 2000 --rollout-chunk 500 tient largement en
-VRAM ; latence typique (horizon 10, 200 candidats, 3 itérations) : quelques
-dizaines de ms.
+GPU (RTX 5090) : utiliser --rollout-chunk pour borner la mémoire des
+rollouts. Mesurer la latence réelle avec 07_benchmark.py.
 
 Usage:
     python scripts/06_inference_demo.py [--lora-ckpt PATH] [--predictor-ckpt PATH]

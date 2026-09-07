@@ -4,13 +4,12 @@ Encode tes démos LeRobot HF avec DINOv3 et sauvegarde les patches sur disque.
 Pourquoi pré-encoder : une fois les latents sur disque, les expériences
 suivantes (fusions, predictor, LoRA) prennent quelques secondes/minutes.
 
-GPU (RTX 4090) :
+GPU (RTX 5090) :
     - encodeur en bf16 + SDPA, batch 64 par défaut : le goulot devient le
       DÉCODAGE VIDÉO côté CPU → --num-workers auto (= cœurs - 2, max 8),
       pin_memory + prefetch pour recouvrir le transfert PCIe ;
     - le preprocessing tourne sur le GPU (images transférées brutes).
-    Ordre de grandeur : ~1-2 min pour 8 000 images en DINOv3-small (CPU :
-    ~2 h).
+    Le débit dépend du décodage vidéo : le mesurer avec 07_benchmark.py.
 
 Usage:
     python scripts/02_encode_dataset.py [--config configs/default.yaml]

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════
-# UNE SEULE COMMANDE — benchmark de la RTX 4090 depuis un clone vierge :
+# UNE SEULE COMMANDE — benchmark de la RTX 5090 depuis un clone vierge :
 #
-#     HF_TOKEN=hf_xxx bash bench.sh
+#     make
 #
 # À la fin : results/benchmark_report_<date>.tar.gz — C'EST CE FICHIER QU'IL
 # FAUT NOUS RENVOYER (estimations + log + infos GPU/versions).
@@ -10,7 +10,7 @@
 # Fait tout, dans l'ordre, sans rien demander :
 #   1. trouve un Python 3.10+ ;
 #   2. crée .venv et installe torch CUDA + dépendances + lerobot
-#      (sauté si déjà fait — relancer est instantané) ;
+#      (sauté si les dépendances sont déjà installées) ;
 #   3. login HuggingFace si HF_TOKEN est posé (DINOv3 est gated ; sans
 #      token l'encodeur est simplement sauté, le reste est mesuré) ;
 #   4. vérifie que le GPU est visible ;
@@ -21,9 +21,10 @@
 #
 # Options (variables d'environnement, toutes facultatives) :
 #   HF_TOKEN=hf_xxx      token HuggingFace (accès DINOv3)
+#   HF_TOKEN_FILE=...    fichier contenant le token (défaut configs/hf_token.txt)
 #   N_EPOCHS=100         epochs visés pour le predictor   (défaut 30)
 #   LORA_EPOCHS=20       epochs visés pour le LoRA        (défaut 20)
-#   BATCH_SIZES=64,128   batch sizes des mini-trains      (défaut 32,64,128)
+#   BATCH_SIZES=64,128   batch sizes des mini-trains      (défaut 32,64,128,256)
 #   DATASET_ID=...       dataset pour mesurer le décodage vidéo réel
 #                        (défaut : celui de configs/default.yaml)
 #   NO_DATASET=1         ne pas télécharger/mesurer le dataset
@@ -40,7 +41,7 @@ CUDA_INDEX="${CUDA_INDEX:-https://download.pytorch.org/whl/cu128}"
 CONFIG="${CONFIG:-configs/default.yaml}"
 N_EPOCHS="${N_EPOCHS:-30}"
 LORA_EPOCHS="${LORA_EPOCHS:-20}"
-BATCH_SIZES="${BATCH_SIZES:-32,64,128}"
+BATCH_SIZES="${BATCH_SIZES:-32,64,128,256}"
 BENCH_ARGS="${BENCH_ARGS:-}"
 mkdir -p logs results
 STAMP_DATE="$(date +%Y%m%d_%H%M%S)"
@@ -76,18 +77,25 @@ if [ -n "${PYTHON_NO_INSTALL:-}" ] || { [ -f "$STAMP" ] && [ "$(cat "$STAMP")" =
 else
     say "[2/6] Installation des dépendances (torch CUDA, transformers, lerobot…)"
     "$PYTHON" -m pip install --upgrade pip -q
-    "$PYTHON" -m pip install torch torchvision --index-url "$CUDA_INDEX"
+    "$PYTHON" -m pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url "$CUDA_INDEX"
     "$PYTHON" -m pip install -r requirements_wm.txt
-    "$PYTHON" -m pip install "lerobot>=0.5"
+    "$PYTHON" -m pip install "lerobot>=0.5" -c requirements_wm.txt
+    mkdir -p "$VENV"
     echo "$WANT" > "$STAMP"
 fi
 command -v ffmpeg >/dev/null 2>&1 || \
     echo "[avertissement] ffmpeg absent : la mesure du décodage vidéo réel sera sautée (sudo apt install ffmpeg)."
 
 # ── 3. HuggingFace ──────────────────────────────────────────────────────
+HF_TOKEN_FILE="${HF_TOKEN_FILE:-configs/hf_token.txt}"
+if [ -z "${HF_TOKEN:-}" ] && [ -f "$HF_TOKEN_FILE" ]; then
+    HF_TOKEN="$(< "$HF_TOKEN_FILE")"
+    HF_TOKEN="${HF_TOKEN//$'\r'/}"
+fi
+export HF_TOKEN
 if [ -n "${HF_TOKEN:-}" ]; then
     say "[3/6] Login HuggingFace"
-    "$PYTHON" -c "from huggingface_hub import login; login(token='$HF_TOKEN', add_to_git_credential=False)" \
+    "$PYTHON" -c 'import os; from huggingface_hub import login; login(token=os.environ["HF_TOKEN"], add_to_git_credential=False)' \
         && echo "Token HF enregistré." || echo "[avertissement] login HF échoué — l'encodeur DINOv3 sera sauté."
 else
     if ! "$PYTHON" -c "from huggingface_hub import whoami; whoami()" >/dev/null 2>&1; then
@@ -98,16 +106,7 @@ fi
 
 # ── 4. GPU ──────────────────────────────────────────────────────────────
 say "[4/6] GPU"
-"$PYTHON" - <<'EOF'
-import torch
-if torch.cuda.is_available():
-    p = torch.cuda.get_device_properties(0)
-    print(f"GPU : {p.name} | {p.total_memory/1e9:.0f} GB | sm_{p.major}{p.minor} | "
-          f"CUDA {torch.version.cuda} | bf16={torch.cuda.is_bf16_supported()}")
-else:
-    print("[ATTENTION] Aucun GPU visible : le benchmark tournera sur CPU (temps non représentatifs).")
-    print("            Vérifier nvidia-smi ; sous WSL2, mettre à jour le driver NVIDIA Windows.")
-EOF
+"$PYTHON" scripts/00_check_gpu.py --config "$CONFIG"
 
 # ── 5. Benchmark ────────────────────────────────────────────────────────
 DS_ARGS=""

@@ -8,7 +8,7 @@ encoder:
   family: "dinov3"                      # "dinov3" (Meta, validé) / "dinov2" (public fallback)
   size: "small"                         # "small" (21M) / "base" (86M) / "large" (300M) / "giant" (1.1B)
   image_size: 224
-  # dtype des POIDS de l'encodeur : "auto" = bf16 sur GPU compatible (4090),
+  # dtype des POIDS de l'encodeur : "auto" = bf16 sur GPU compatible (5090),
   # fp32 sur CPU. Sorties toujours renvoyées en fp32. "float32" pour forcer.
   dtype: "auto"                         # "auto" / "float32" / "bfloat16" / "float16"
   # "sdpa" = flash attention via torch (recommandé) ; "eager" = référence
@@ -25,7 +25,7 @@ dataset:
   cache_dir: null                       # null = défaut HF
   val_fraction: 0.2
 
-# Matériel — tout est "auto" : rien à toucher sur une RTX 4090 (24 GB).
+# Matériel — tout est "auto" : rien à toucher sur une RTX 5090 (32 GB).
 hardware:
   tf32: true                            # matmuls fp32 en TF32 (Ampere+) : ~2x, précision OK
   cudnn_benchmark: true                 # autotune des kernels (shapes fixes)

@@ -1,5 +1,5 @@
 """
-Tests de l'adaptation GPU (RTX 4090) — CPU-only sauf les tests marqués GPU.
+Tests de l'adaptation GPU (RTX 5090) — CPU-only sauf les tests marqués GPU.
 
 Lancer :  python -m pytest tests/ -v
 """
@@ -20,6 +20,100 @@ from src.config import hardware_config
 from src.planner import CEMConfig, CEMPlanner
 from src.predictor import PredictorConfig, WorldModelPredictor
 from src.lora import LoRAConfig, inject_lora, merge_lora
+from src.device import validate_cuda_runtime
+from src.fusion import CrossAttentionBidirectional
+
+
+class TestBlackwellRuntime:
+    @pytest.mark.parametrize("torch_version,cuda_version,compatible", [
+        ("2.6.0+cu126", "12.6", False),
+        ("2.10.0+cu126", "12.6", False),
+        ("2.10.0+cu128", "12.8", True),
+        ("2.10.0+cu130", "13.0", True),
+    ])
+    def test_runtime_versions(self, monkeypatch, torch_version, cuda_version, compatible):
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "get_device_capability", lambda: (12, 0))
+        monkeypatch.setattr(torch.version, "hip", None)
+        monkeypatch.setattr(torch.version, "cuda", cuda_version)
+        monkeypatch.setattr(torch, "__version__", torch_version)
+        if compatible:
+            validate_cuda_runtime()
+        else:
+            with pytest.raises(RuntimeError, match="Blackwell sm_120"):
+                validate_cuda_runtime()
+
+    def test_cpu_optional_or_required(self, monkeypatch):
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        validate_cuda_runtime()
+        with pytest.raises(RuntimeError, match="GPU CUDA indisponible"):
+            validate_cuda_runtime(require_cuda=True)
+
+    def test_ada_keeps_older_cuda_support(self, monkeypatch):
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "get_device_capability", lambda: (8, 9))
+        monkeypatch.setattr(torch.version, "cuda", "12.6")
+        validate_cuda_runtime()
+
+
+def test_fusion_sdpa_matches_attention_reference():
+    """Le chemin sans poids d'attention conserve sorties et gradients."""
+    import copy
+    torch.manual_seed(2)
+    fusion = CrossAttentionBidirectional(dim=32, n_heads=4)
+    ref = copy.deepcopy(fusion)
+    zw, zg = torch.randn(2, 8, 32), torch.randn(2, 8, 32)
+    actual = fusion(zw, zg)
+    w, _ = ref.attn_w_to_g(zw, zg, zg, need_weights=True)
+    g, _ = ref.attn_g_to_w(zg, zw, zw, need_weights=True)
+    expected = torch.cat([ref.norm_w(zw + w), ref.norm_g(zg + g)], dim=1)
+    torch.testing.assert_close(actual, expected, atol=1e-6, rtol=1e-5)
+    target = torch.randn_like(actual)
+    (actual * target).sum().backward()
+    (expected * target).sum().backward()
+    for p, q in zip(fusion.parameters(), ref.parameters()):
+        torch.testing.assert_close(p.grad, q.grad, atol=1e-5, rtol=1e-4)
+
+
+def test_benchmark_releases_models_after_oom(monkeypatch):
+    import importlib.util
+    import weakref
+    from types import SimpleNamespace
+
+    spec = importlib.util.spec_from_file_location("benchmark", ROOT / "scripts/07_benchmark.py")
+    bench = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bench)
+    refs = []
+    model_class = bench.WorldModelPredictor
+
+    def build_model(cfg):
+        # Le modèle de l'essai précédent ne doit plus occuper de mémoire.
+        assert all(ref() is None for ref in refs)
+        model = model_class(cfg)
+        refs.append(weakref.ref(model))
+        return model
+
+    calls = 0
+
+    def timed_step(fn, warmup, steps):
+        nonlocal calls
+        calls += 1
+        fn()
+        if calls == 1:
+            raise torch.cuda.OutOfMemoryError("OOM simulé après backward")
+        return 0.01
+
+    monkeypatch.setattr(bench, "WorldModelPredictor", build_model)
+    monkeypatch.setattr(bench, "time_steps", timed_step)
+    data = {k: torch.randn(8, 4, 32) for k in
+            ("z_wrist_t", "z_global_t", "z_wrist_t1", "z_global_t1")}
+    data["action"] = torch.randn(8, 6)
+    args = SimpleNamespace(batch_sizes=[2, 4], fusion="cross_attn_bd",
+                           n_layers=1, steps=1, n_epochs=1)
+    result = bench.bench_predictor({"seed": 42}, args, "cpu", None, data, 8)
+    assert result["per_batch_size"]["2"] == {"oom": True}
+    assert result["fastest_batch_size"] == 4
+    assert all(ref() is None for ref in refs)
 
 
 # ────────────────────────────────────────────────────────────────

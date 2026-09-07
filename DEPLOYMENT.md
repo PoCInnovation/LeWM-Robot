@@ -1,174 +1,165 @@
-# Déploiement sur une machine RTX 4090 (ou tout GPU NVIDIA)
+# Déploiement sur RTX 5090
 
-Cible : 1 × RTX 4090 (24 GB, Ada, sm_89), CUDA 12.x, Linux natif ou WSL2.
-Le pipeline est calibré pour cette carte : bf16 + TF32 partout, latents
-pré-encodés hébergés en VRAM, batch sizes par défaut dimensionnés pour 24 GB.
-Tout reste fonctionnel sur CPU (fp32, plus lent) pour développer.
+Cible : une RTX 5090, architecture Blackwell (`sm_120`), 32 Go de VRAM,
+sous Linux ou WSL2. Le code conserve son fonctionnement CPU et RTX 4090.
+Les performances sur 5090 doivent être mesurées sur la machine cible.
 
-## 1. Prérequis système
-
-| Quoi | Détail |
-|---|---|
-| Driver NVIDIA | ≥ 525 (CUDA 12). `nvidia-smi` doit lister la 4090. |
-| WSL2 | driver Windows récent suffit — **ne jamais installer de driver dans WSL**. `nvidia-smi` fonctionne dans WSL si le driver Windows est OK. |
-| Python | 3.10 – 3.12 (`python3.12` recommandé). |
-| ffmpeg | requis pour le décodage vidéo LeRobot (`sudo apt install ffmpeg`). |
-| Disque | ~20 GB libres pour les latents d'un dataset + les checkpoints. |
-| Accès DINOv3 | modèles gated : demander l'accès à `facebook/dinov3-*` sur huggingface.co puis `huggingface-cli login`. En attendant : `encoder.family: "dinov2"` (public). |
-
-## 2. Installation
-
-Raccourci : `make install` (venv + torch cu128 + dépendances + lerobot), puis
-`huggingface-cli login`. Toutes les cibles : `make help`. À la main :
+## Commande unique depuis le dépôt
 
 ```bash
-git clone <repo> && cd LeWM-Robot
-git checkout feat/rtx4090
-
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install --upgrade pip
-
-# torch CUDA D'ABORD (sinon pip peut résoudre un build CPU)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-pip install -r requirements_wm.txt
-pip install git+https://github.com/huggingface/lerobot.git   # ou: pip install "lerobot>=0.5"
-
-huggingface-cli login            # token HF (DINOv3 gated)
-
-# Vérifier CUDA + bf16
-python -c "import torch; print(torch.cuda.get_device_name(0), torch.cuda.is_bf16_supported())"
+make
 ```
 
-## 3. Lancer le pipeline
+Cette commande installe les dépendances si nécessaire, lit le token dans
+`configs/hf_token.txt`, connecte Hugging Face, vérifie le matériel, lance
+le benchmark puis produit l’archive du rapport. `make all` et `make bench`
+sont équivalents. Le fichier du token est destiné à être versionné selon
+le choix du projet ; il est exclu du contenu du rapport et des logs.
+Une variable `HF_TOKEN` non vide prend priorité sur ce fichier.
 
-### Smoke test d'abord (≈ 2-5 min)
+Le benchmark estime la durée des entraînements ; il ne lance pas les
+entraînements complets. Ceux-ci restent accessibles avec `make run`.
 
-Déroule TOUTE la chaîne en miniature (200 paires, 2 epochs) — à faire sur
-chaque nouvelle machine avant un vrai run :
+## Installation
+
+- Python 3.10–3.12, de préférence 3.12 pour les dépendances LeRobot.
+- Driver NVIDIA R570 ou plus récent compatible avec la 5090 et CUDA 12.8.
+  Sous WSL2, installer le driver côté Windows. Vérifier `nvidia-smi`.
+- `ffmpeg` pour les vidéos ; accès Hugging Face approuvé pour DINOv3.
+- RAM et disque adaptés au dataset : les quatre tenseurs fp32 occupent environ
+  1,2 Go pour 1 000 paires DINOv3-small. L’encodage accumule les latents en RAM
+  puis les concatène : prévoir aussi la mémoire temporaire.
 
 ```bash
-make smoke          # = SMOKE=1 bash run_local.sh
+make install
+source .venv/bin/activate
+hf auth login
+make check
 ```
 
-### Chaîne complète
+L’installation fixe le couple officiel **torch 2.10.0 / torchvision 0.25.0**
+sur l’index CUDA 12.8. Transformers est limité à `>=4.56,<5` pour DINOv3.
+Les contraintes sont aussi appliquées à l’installation de LeRobot pour éviter
+qu’elle remplace ce couple. Un conflit de dépendances doit être résolu avant
+le lancement du pipeline.
+
+Installation manuelle équivalente :
 
 ```bash
-bash run_local.sh                                   # dataset + encodeur de configs/default.yaml
-DATASET_ID=/chemin/local/mon_dataset bash run_local.sh
-REAL_DATASET=user/demos_reelles bash run_local.sh   # + étape LoRA
-TRAIN_ARGS="--n-epochs 100 --batch-size 128" bash run_local.sh
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu128
+python -m pip install -r requirements_wm.txt
+python -m pip install 'lerobot>=0.5' -c requirements_wm.txt
+python scripts/00_check_gpu.py --require-cuda
+```
+
+Blackwell nécessite PyTorch >= 2.7 construit avec CUDA >= 12.8. Les anciennes
+roues `cu124` et `cu126` ne conviennent pas à cette carte. Installer un toolkit
+CUDA local plus récent ne change pas le runtime embarqué par une roue PyTorch.
+Le projet garde volontairement une version précise disponible sur `cu128`.
+
+## Contrôle matériel
+
+`00_check_gpu.py` ne télécharge aucun modèle. Il vérifie la compatibilité du
+runtime, puis exécute une fusion cross-attention, un predictor SDPA, le backward
+et un pas AdamW (fused sur CUDA), avec la précision configurée.
+
+```bash
+python scripts/00_check_gpu.py --require-cuda
+make check  # contrôle CUDA puis chargement et vérification de DINO
+```
+
+`--require-cuda` fait échouer le contrôle si aucun GPU n’est utilisable. Sans
+cette option, le contrôle peut tourner sur CPU. `bench.sh` et `run_local.sh`
+l’exécutent avant leur travail ; un benchmark CPU est explicitement identifié.
+
+## Benchmark et réglages
+
+```bash
+HF_TOKEN=hf_xxx bash bench.sh
+# ou, sans téléchargement du dataset :
+NO_DATASET=1 bash bench.sh
+# sans encodeur ni dataset, avec latents synthétiques :
+make bench-quick
+```
+
+Le benchmark essaie **32, 64, 128 et 256** pour le predictor. Chaque essai
+libère ses modèles, gradients et optimiseur ; un manque de VRAM est enregistré
+comme OOM puis les essais suivants continuent. Les autres étapes ont leurs
+propres tailles de batch et peuvent nécessiter une réduction.
+
+```bash
+BATCH_SIZES=32,64,128 N_EPOCHS=100 bash bench.sh
+BENCH_ARGS='--encoder-batch 32 --lora-batch 16 --cem-samples 64,200' bash bench.sh
+```
+
+Résultats : `results/benchmark.json` et
+`results/benchmark_report_<date>.tar.gz` (résumé, logs, configuration, versions).
+Vérifier si les latents sont réels ou synthétiques et si l’encodage a été mesuré :
+un total sans encodage n’est pas une estimation complète. Le benchmark ne mesure
+pas la qualité du modèle ni la réussite d’une tâche robotique.
+
+| Réglage | Valeur initiale | Utilisation |
+|---|---|---|
+| `hardware.precision` | `auto` | bf16 sur GPU compatible, fp32 sur CPU |
+| `hardware.tf32` | `true` | TF32 pour les opérations fp32 |
+| `hardware.data_device` | `auto` | VRAM si les latents tiennent dans 45 % de la mémoire libre, sinon RAM |
+| `hardware.num_workers` | `auto` | min(8, cœurs CPU − 2), à ajuster selon le décodage |
+| `hardware.compile` | `false` | opt-in ; première compilation coûteuse, gain à mesurer |
+| Predictor `--batch-size` | `64` | augmenter uniquement après benchmark du modèle choisi |
+| LoRA `--batch-size` | `32` | ajuster selon la mémoire restante |
+| CEM `--rollout-chunk` | `500` dans le pipeline complet | limiter les candidats traités simultanément |
+
+Les 32 Go ne garantissent pas qu’un dataset entier ou un batch de 256 tienne :
+la taille de l’encodeur, la fusion et le nombre de couches changent le besoin.
+La fusion ne calcule plus de matrices de poids d’attention inutilisées, ce qui
+permet à PyTorch d’utiliser SDPA. Le choix du kernel reste géré par PyTorch.
+
+## Pipeline
+
+```bash
+make smoke
+make run
+REAL_DATASET=user/demos_reelles bash run_local.sh
+TRAIN_ARGS='--n-epochs 100 --batch-size 128' bash run_local.sh
 SKIP_ENCODE=1 SKIP_FUSION=1 FUSION=cross_attn_bd bash run_local.sh
 ```
 
-Chaque étape écrit son log dans `logs/<étape>_<horodatage>.log` et la
-chaîne s'arrête à la première erreur. Sorties :
+Le script utilise `.venv/bin/python` s’il existe, sinon `python3`.
+`PYTHON=/chemin/python` permet de choisir un autre environnement.
+Le mode smoke réduit les données et le modèle. LoRA n’est exécuté que si
+`REAL_DATASET` est fourni.
 
-```
-results/encoded/encoded_data.pt          latents fp32 (paires t, t+1) + actions + méta
-results/fusion_comparison.{json,png}     comparaison des fusions
-results/checkpoints/predictor_simu.pt    predictor + fusion (best val)
-results/checkpoints/predictor_real.pt    idem avec LoRA
-```
+Sorties :
 
-### Étape par étape
+- `results/encoded/encoded_data.pt` : latents, actions et métadonnées.
+- `results/fusion_comparison.{json,png}` : comparaison des fusions.
+- `results/checkpoints/predictor_simu.pt` : predictor et fusion.
+- `results/checkpoints/predictor_real.pt` : predictor adapté avec LoRA.
+- `logs/` : journaux par étape.
 
-```bash
-python scripts/01_test_dinov3.py                               # débit bf16 vs fp32, cos-sim
-python scripts/02_encode_dataset.py --dataset-id divisio74/duck_dataset_v3
-python scripts/03_compare_fusion.py
-python scripts/04_train_predictor.py --encoded-data results/encoded/encoded_data.pt \
-    --fusion cross_attn_bd --n-epochs 100 --batch-size 64
-python scripts/02_encode_dataset.py --dataset-id <demos_reelles> \
-    --output results/encoded/real_encoded_data.pt
-python scripts/05_train_lora.py
-python scripts/06_inference_demo.py --n-samples 2000 --rollout-chunk 500
-```
-
-## 4. Ce que fait l'adaptation 4090 (et où la régler)
-
-Tout est piloté par la section `hardware` de `configs/default.yaml`
-(surchargeable en CLI sur chaque script) :
-
-| Clé | Défaut | Effet |
-|---|---|---|
-| `tf32` | `true` | matmuls fp32 exécutés en TF32 (tensor cores) : ~2x, précision suffisante |
-| `cudnn_benchmark` | `true` | autotune des kernels (shapes fixes) |
-| `precision` | `auto` | autocast **bf16** sur la 4090 (fp32 sur CPU). `--precision fp32` pour comparer |
-| `data_device` | `auto` | latents pré-encodés chargés **en VRAM** si ≤ 45 % de la VRAM libre, sinon RAM (pinned). `--data-device cpu` pour forcer |
-| `num_workers` | `auto` | workers de décodage vidéo à l'encodage (= cœurs − 2, max 8) |
-| `compile` | `false` | `torch.compile` du predictor (`--compile`) : +30-80 % après warmup |
-
-Côté encodeur (`encoder.dtype: auto`) : DINOv3 est chargé en **bf16** avec
-attention **SDPA** (flash attention), le preprocessing se fait sur le GPU, les
-latents ressortent en fp32. `01_test_dinov3.py` affiche la similarité cosine
-bf16/fp32 (attendu > 0.99) et le débit.
-
-Côté planner (`06`, `src/planner.py`) : rollouts CEM en autocast bf16 et
-découpés en chunks (`--rollout-chunk`) — on peut monter à 2000-5000 candidats
-sur 24 GB.
-
-Note sur `encoded_data.pt` : le fichier contient 4 tenseurs de latents fp32
-(≈ 4 × N × 196 × 384 × 4 octets ≈ 1.2 GB pour 1 000 paires en DINOv3-small).
-Pour un gros dataset, `data_device: auto` les laissera en RAM et transférera
-chaque batch ; la VRAM n'est jamais un blocage, la RAM système peut l'être.
-
-## 5. Estimer le temps d'un run complet : `07_benchmark.py`
-
-Avant de lancer un long training, mesure les vrais temps sur TA machine :
-le script lance de courts entraînements chronométrés (mêmes modules et même
-boucle que 03/04/05/06, 3 batch sizes pour le predictor) et extrapole à la
-taille du dataset et au nombre d'epochs visé.
+## Tests et dépannage
 
 ```bash
-bash bench.sh                  # COMMANDE UNIQUE depuis un clone vierge : install + login HF + GPU + benchmark
-make bench                     # idem (log dans logs/benchmark_*.log)
-make bench N_EPOCHS=100        # variables : N_EPOCHS, LORA_EPOCHS, BATCH_SIZES, DATASET_ID, BENCH_ARGS
-make bench-quick               # sans dataset ni encodeur (~1 min)
-
-# équivalent direct :
-python scripts/07_benchmark.py --n-epochs 100 --dataset-id divisio74/duck_dataset_v3
-
-# avant même d'avoir encodé (latents synthétiques aux bonnes dimensions) :
-python scripts/07_benchmark.py --n-pairs 15000 --n-epochs 100 --skip-encoder
-
-# variantes : --batch-sizes 64,128,256  --n-layers 12  --fusion concat_view
-#             --lora-epochs 20 --n-real-pairs 4000  --cem-samples 200,1000,5000
+python -m pip install pytest
+python -m pytest tests/ -q
 ```
 
-Sortie : une ligne par étape (`02 encodage`, `03 fusions`, `04 predictor` avec
-le batch le plus rapide et le pic VRAM par batch, `05 LoRA`, latence CEM) et
-le **TOTAL**, plus `results/benchmark.json`. `--dataset-id` ajoute la mesure
-du pipeline d'encodage réel (décodage vidéo inclus — c'est le goulot en
-pratique) ; sans lui l'estimation d'encodage est une borne inférieure GPU.
-Compter ~1-3 min pour le benchmark lui-même.
+Les tests simulent les versions Blackwell sur CPU et vérifient l’équivalence
+de la fusion SDPA, les rollouts et LoRA. Les tests CUDA nécessitent un GPU.
+Ils ne remplacent pas un smoke test sur une vraie 5090 avec le dataset cible.
 
-## 6. Ordres de grandeur attendus (DINOv3-small)
-
-| Étape | 4090 | Remarque |
-|---|---|---|
-| Encodage (4 images/paire) | ~500-1500 img/s | goulot = décodage vidéo CPU ; si le GPU n'est pas à 100 % dans `nvidia-smi`, augmenter `--num-workers` |
-| Comparaison fusions (4 × 30 epochs) | ~1-3 min | latents en VRAM |
-| Predictor 30 epochs, batch 64 | ~5-15 min | `--compile` pour accélérer |
-| LoRA 20 epochs | ~1-3 min | |
-| CEM (horizon 10, 200 cand., 3 iter) | ~20-50 ms | `--n-samples 2000` reste < 200 ms |
-
-VRAM : DINOv3-small (dim 384, 392 tokens) tient à `--batch-size 256` ;
-DINOv3-base (768) à 128 ; DINOv3-large (1024) autour de 48. Le pic VRAM est
-loggé à chaque epoch (clé `history` du checkpoint, `peak_vram_gb`).
-
-## 7. Dépannage
-
-| Symptôme | Cause / solution |
+| Symptôme | Action |
 |---|---|
-| `torch.cuda.is_available() == False` | build torch CPU (réinstaller depuis l'index `cu128`) ou driver absent ; sous WSL2 : mettre à jour le driver **Windows** |
-| `CUDA out of memory` | réduire `--batch-size` ; `--data-device cpu` ; `--rollout-chunk` plus petit en 06 |
-| GPU à 20-30 % pendant l'encodage | décodage vidéo trop lent : `--num-workers 8`, vérifier ffmpeg |
-| latents bf16 trop éloignés de fp32 (01) | `encoder.dtype: float32` (rare) |
-| DINOv3 : 401/403 au téléchargement | accès gated non approuvé : `huggingface-cli login` + demande d'accès Meta, ou `encoder.family: dinov2` |
-| `attn_implementation=sdpa non supporté` | message informatif : transformers retombe sur l'attention eager (plus lente, même résultat) |
+| CUDA indisponible | vérifier `nvidia-smi`, le driver et l’environnement Python sélectionné |
+| `no kernel image` / `sm_120` incompatible | réinstaller le couple CUDA 12.8 ci-dessus, relancer `00_check_gpu.py` |
+| OOM | réduire batch/chunk ou choisir `hardware.data_device: cpu` |
+| GPU peu occupé à l’encodage | mesurer et ajuster les workers ; vérifier CPU, stockage et décodage vidéo |
+| DINOv3 401/403 | vérifier accès au modèle et authentification ; DINOv2 est une alternative configurable |
 
-## 8. Bonnes pratiques
-
-- `tmux new -s wm` puis `bash run_local.sh` : la chaîne survit à la fermeture du terminal.
-- `watch -n 1 nvidia-smi` dans un second onglet pour vérifier l'utilisation GPU/VRAM.
-- Ne pas versionner `results/` (déjà dans `.gitignore`) ; les checkpoints contiennent la config du predictor et de la fusion pour être rejoués ailleurs.
+Références : [versions officielles PyTorch](https://pytorch.org/get-started/previous-versions/),
+[support Blackwell depuis PyTorch 2.7](https://pytorch.org/blog/pytorch-2-7/),
+[spécifications RTX 5090](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/),
+[DINOv3 dans Transformers 4.56](https://huggingface.co/docs/transformers/v4.56.0/en/model_doc/dinov3).

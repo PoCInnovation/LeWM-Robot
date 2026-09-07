@@ -83,11 +83,11 @@ class CrossAttentionBidirectional(nn.Module):
     def forward(self, z_wrist: torch.Tensor, z_global: torch.Tensor,
                 proprio: Optional[torch.Tensor] = None) -> torch.Tensor:
         # Wrist enrichi par global
-        z_w_enriched, _ = self.attn_w_to_g(z_wrist, z_global, z_global)
+        z_w_enriched, _ = self.attn_w_to_g(z_wrist, z_global, z_global, need_weights=False)
         z_w = self.norm_w(z_wrist + z_w_enriched)
 
         # Global enrichi par wrist
-        z_g_enriched, _ = self.attn_g_to_w(z_global, z_wrist, z_wrist)
+        z_g_enriched, _ = self.attn_g_to_w(z_global, z_wrist, z_wrist, need_weights=False)
         z_g = self.norm_g(z_global + z_g_enriched)
 
         return torch.cat([z_w, z_g], dim=1)
@@ -147,7 +147,7 @@ class ProprioGuidedFusion(nn.Module):
         all_patches = torch.cat([z_wrist, z_global], dim=1)
 
         # Le proprio "interroge" toutes les patches
-        relevant, _ = self.cross_attn(proprio_token, all_patches, all_patches)
+        relevant, _ = self.cross_attn(proprio_token, all_patches, all_patches, need_weights=False)
         relevant = self.norm(relevant)
 
         # Combinaison finale : proprio_relevant + tous les patches

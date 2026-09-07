@@ -8,10 +8,10 @@ Utilisé en :
     - Phase 1 (training)  : encoder les frames pour entraîner le predictor + LoRA
     - Phase 2 (inference) : encoder l'image courante et l'image-goal
 
-GPU NVIDIA (RTX 4090) :
+GPU NVIDIA (RTX 5090) :
     - poids chargés en bf16 (dtype="auto") : VRAM /2, débit x2-3, aucune
       perte mesurable sur les latents (les sorties sont renvoyées en fp32) ;
-    - attention SDPA (flash attention sur Ada) quand transformers le permet ;
+    - attention SDPA (kernels SDPA selon le matériel) quand transformers le permet ;
     - le preprocessing (uint8 → float, resize, normalisation ImageNet) se fait
       SUR le GPU : on transfère les images brutes (4x moins d'octets en uint8)
       et on évite un aller-retour CPU.
@@ -72,14 +72,14 @@ class DINOv3Config:
     size: str = "base"               # "small" / "base" / "large" / "giant"
     family: str = "dinov3"           # "dinov3" (gated) / "dinov2" (public, fallback)
     device: str = "auto"             # "auto" / "cpu" / "cuda"
-    # dtype des POIDS : "auto" = bf16 sur GPU compatible (4090), fp32 sinon.
+    # dtype des POIDS : "auto" = bf16 sur GPU compatible (5090), fp32 sinon.
     # Accepte aussi un torch.dtype ou "float32"/"bfloat16"/"float16".
     dtype: Union[str, torch.dtype] = "auto"
     image_size: int = 224
     # patch_size nominal — la valeur RÉELLE est lue depuis le modèle chargé
     # (DINOv2 = 14, DINOv3 = 16). Utiliser encoder.num_patches.
     patch_size: int = 16
-    # "sdpa" = flash/mem-efficient attention via torch (recommandé sur 4090),
+    # "sdpa" = flash/mem-efficient attention via torch (recommandé sur 5090),
     # "eager" = implémentation de référence. None = défaut transformers.
     attn_implementation: Optional[str] = "sdpa"
 

@@ -10,9 +10,9 @@ Pour chaque stratégie de fusion :
 La meilleure fusion = celle qui rend l'action le plus prédictible
 (c'est-à-dire qui préserve le plus d'info utile dans le latent).
 
-GPU (RTX 4090) : les latents sont hébergés en VRAM (hardware.data_device:
+GPU (RTX 5090) : les latents sont hébergés en VRAM (hardware.data_device:
 auto) → aucun transfert pendant l'entraînement ; autocast bf16, AdamW fused.
-Les 4 stratégies × 30 epochs prennent ~1-3 min.
+Le benchmark mesure le coût des stratégies sur la machine cible.
 
 Usage:
     python scripts/03_compare_fusion.py [--encoded-data results/encoded/encoded_data.pt]

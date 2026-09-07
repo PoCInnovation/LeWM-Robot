@@ -4,7 +4,7 @@ Sanity check : vérifier que DINOv3 charge et encode correctement.
 Ne dépend d'aucune donnée — utilise des images aléatoires.
 Lance ce script en premier pour valider l'environnement.
 
-Sur GPU (RTX 4090) : mesure le débit en bf16 (défaut) et compare les latents
+Sur GPU (RTX 5090) : mesure le débit en bf16 (défaut) et compare les latents
 bf16 vs fp32 (similarité cosine) pour vérifier que la précision réduite ne
 dégrade pas les features.
 

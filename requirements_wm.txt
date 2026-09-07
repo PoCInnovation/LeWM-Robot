@@ -1,12 +1,12 @@
-# GPU NVIDIA (RTX 4090, CUDA 12.x) : installer torch depuis l'index CUDA
+# GPU NVIDIA (RTX 5090, Blackwell, CUDA 12.8+) : installer torch depuis l'index CUDA
 # AVANT ce fichier, sinon pip peut résoudre un build CPU :
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
-# (cu126 / cu124 fonctionnent aussi ; driver NVIDIA >= 525.)
+#   pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu128
+# RTX 5090 : cu124/cu126 incompatibles. Utiliser un driver NVIDIA R570 ou plus récent.
 
 # Core ML
-torch>=2.4              # transformers récent demande >= 2.4 ; >= 2.5 pour SDPA flash bf16
-torchvision>=0.19
-transformers>=4.45      # DINOv3 + attn_implementation="sdpa"
+torch==2.10.0           # couple officiel CUDA 12.8, support Blackwell sm_120
+torchvision==0.25.0
+transformers>=4.56,<5      # DINOv3 + attn_implementation="sdpa"
 numpy>=1.24
 einops>=0.7
 
