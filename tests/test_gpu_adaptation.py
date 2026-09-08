@@ -13,9 +13,11 @@ import torch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import src.device as device_module
 from src.device import (autocast_ctx, choose_data_device, configure_backend,
-                        make_adamw, maybe_compile, place_tensors,
-                        resolve_amp_dtype, resolve_num_workers, unwrap)
+                        configure_power_limit, make_adamw, maybe_compile,
+                        place_tensors, resolve_amp_dtype, resolve_num_workers,
+                        unwrap)
 from src.config import hardware_config
 from src.planner import CEMConfig, CEMPlanner
 from src.predictor import PredictorConfig, WorldModelPredictor
@@ -171,6 +173,46 @@ class TestDeviceHelpers:
     def test_configure_backend_noop_on_cpu(self):
         configure_backend(verbose=False)   # ne doit pas lever sans GPU
 
+    def test_power_limit_noop_on_cpu(self, monkeypatch):
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+        assert configure_power_limit(verbose=False) is None
+
+    def test_power_limit_is_applied_and_verified(self, monkeypatch):
+        queries = iter([
+            (575.0, 575.0, 200.0, 600.0),
+            (460.0, 575.0, 200.0, 600.0),
+        ])
+        set_calls = []
+        restore_calls = []
+        device_module._POWER_LIMIT_STATES.clear()
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(device_module, "_find_nvidia_smi", lambda: "nvidia-smi")
+        monkeypatch.setattr(device_module, "_query_power_limits",
+                            lambda executable, index: next(queries))
+        monkeypatch.setattr(device_module, "_set_power_limit",
+                            lambda executable, index, watts: set_calls.append((index, watts)))
+        monkeypatch.setattr(device_module.atexit, "register",
+                            lambda fn, *args: restore_calls.append((fn, args)))
+
+        assert configure_power_limit(verbose=False) == 460.0
+        assert set_calls == [(0, 460.0)]
+        assert device_module._POWER_LIMIT_STATES[0] == ("nvidia-smi", 575.0)
+        assert len(restore_calls) == 1
+        device_module._POWER_LIMIT_STATES.clear()
+
+    def test_power_limit_fails_closed(self, monkeypatch):
+        device_module._POWER_LIMIT_STATES.clear()
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(device_module, "_find_nvidia_smi", lambda: None)
+        with pytest.raises(RuntimeError, match="Impossible de garantir"):
+            configure_power_limit(required=True, verbose=False)
+
+    @pytest.mark.parametrize("percent", [0, 101])
+    def test_power_limit_rejects_invalid_percentage(self, monkeypatch, percent):
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        with pytest.raises(ValueError):
+            configure_power_limit(percent=percent, verbose=False)
+
     def test_maybe_compile_disabled_returns_same(self):
         m = torch.nn.Linear(2, 2)
         assert maybe_compile(m, enabled=False) is m
@@ -184,6 +226,8 @@ class TestDeviceHelpers:
     def test_hardware_config_defaults_and_override(self):
         hw = hardware_config({})
         assert hw["precision"] == "auto" and hw["tf32"] is True
+        assert hw["power_limit_percent"] == 80
+        assert hw["power_limit_required"] is True
         hw = hardware_config({"hardware": {"precision": "fp32", "compile": True}})
         assert hw["precision"] == "fp32" and hw["compile"] is True
         assert hw["data_device"] == "auto"       # défaut conservé

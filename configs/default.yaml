@@ -27,6 +27,12 @@ dataset:
 
 # Matériel — tout est "auto" : rien à toucher sur une RTX 5090 (32 GB).
 hardware:
+  # Plafond électrique strict : 80 % du TGP NVIDIA par défaut (460 W sur une
+  # RTX 5090 FE à 575 W). Nécessite généralement un terminal administrateur.
+  # Le script refuse de démarrer si la limite ne peut pas être appliquée.
+  power_limit_percent: 80
+  power_limit_required: true
+  gpu_index: 0
   tf32: true                            # matmuls fp32 en TF32 (Ampere+) : ~2x, précision OK
   cudnn_benchmark: true                 # autotune des kernels (shapes fixes)
   precision: "auto"                     # autocast : auto (bf16 sur GPU) / bf16 / fp16 / fp32

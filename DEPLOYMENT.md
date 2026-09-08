@@ -1,7 +1,8 @@
 # Déploiement sur RTX 5090
 
 Cible : une RTX 5090, architecture Blackwell (`sm_120`), 32 Go de VRAM,
-sous Linux ou WSL2. Le code conserve son fonctionnement CPU et RTX 4090.
+sous Linux, WSL2 ou Windows natif via `run_windows.ps1`. Le code conserve son
+fonctionnement CPU et RTX 4090.
 Les performances sur 5090 doivent être mesurées sur la machine cible.
 
 ## Commande unique depuis le dépôt
@@ -103,6 +104,9 @@ pas la qualité du modèle ni la réussite d’une tâche robotique.
 
 | Réglage | Valeur initiale | Utilisation |
 |---|---|---|
+| `hardware.power_limit_percent` | `80` | plafond électrique calculé depuis le TGP NVIDIA par défaut |
+| `hardware.power_limit_required` | `true` | interdit le calcul GPU si le plafond ne peut pas être appliqué et vérifié |
+| `hardware.gpu_index` | `0` | GPU ciblé par PyTorch et `nvidia-smi` |
 | `hardware.precision` | `auto` | bf16 sur GPU compatible, fp32 sur CPU |
 | `hardware.tf32` | `true` | TF32 pour les opérations fp32 |
 | `hardware.data_device` | `auto` | VRAM si les latents tiennent dans 45 % de la mémoire libre, sinon RAM |
@@ -132,6 +136,23 @@ Le script utilise `.venv/bin/python` s’il existe, sinon `python3`.
 Le mode smoke réduit les données et le modèle. LoRA n’est exécuté que si
 `REAL_DATASET` est fourni.
 
+Sous Windows natif, ouvrir PowerShell **en administrateur** :
+
+```powershell
+# Validation courte recommandée avant le run complet
+powershell -ExecutionPolicy Bypass -File .\run_windows.ps1 -Smoke
+
+# Pipeline complet
+powershell -ExecutionPolicy Bypass -File .\run_windows.ps1
+```
+
+Le lanceur Windows crée `.venv\Scripts\python.exe`, installe les dépendances et
+exécute les mêmes étapes que `run_local.sh`. À chaque processus GPU, le plafond
+est appliqué avant les kernels lourds, vérifié, puis l'ancienne valeur est
+restaurée à la sortie. Une RTX 5090 FE de 575 W est ainsi plafonnée à 460 W ; le
+calcul utilise le TGP réel annoncé par `nvidia-smi`, donc les modèles partenaires
+sont traités selon leur propre limite par défaut.
+
 Sorties :
 
 - `results/encoded/encoded_data.pt` : latents, actions et métadonnées.
@@ -154,6 +175,7 @@ Ils ne remplacent pas un smoke test sur une vraie 5090 avec le dataset cible.
 | Symptôme | Action |
 |---|---|
 | CUDA indisponible | vérifier `nvidia-smi`, le driver et l’environnement Python sélectionné |
+| limite GPU impossible | lancer PowerShell en administrateur ; vérifier que le modèle et le pilote autorisent `nvidia-smi -pl` |
 | `no kernel image` / `sm_120` incompatible | réinstaller le couple CUDA 12.8 ci-dessus, relancer `00_check_gpu.py` |
 | OOM | réduire batch/chunk ou choisir `hardware.data_device: cpu` |
 | GPU peu occupé à l’encodage | mesurer et ajuster les workers ; vérifier CPU, stockage et décodage vidéo |

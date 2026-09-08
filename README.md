@@ -32,6 +32,25 @@ Prérequis : driver NVIDIA R570 ou plus récent compatible RTX 5090 (`nvidia-smi
 configuré (nécessaire pour DINOv3). La durée dépend du réseau, du dataset et des paramètres du benchmark.
 L’installation est réutilisée aux lancements suivants.
 
+### Windows natif (sans WSL2)
+
+Ouvrir **PowerShell en administrateur** dans le dépôt, puis commencer par le
+smoke test :
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run_windows.ps1 -Smoke
+```
+
+Après validation, retirer `-Smoke` pour la chaîne complète. Le lanceur crée le
+venv Windows, installe les dépendances et appelle directement les scripts
+Python. `ffmpeg`, Python 3.10–3.12 et un pilote NVIDIA récent restent requis.
+
+Tous les scripts GPU appliquent avant le calcul une limite de puissance égale à
+**80 % du TGP NVIDIA par défaut**, vérifient qu'elle est active et restaurent la
+limite précédente à la sortie. Le lancement est refusé si `nvidia-smi` ne peut
+pas garantir ce plafond ; ne pas désactiver ce contrôle pour contourner une
+erreur de droits.
+
 Variables : `N_EPOCHS=100 bash bench.sh`, `BATCH_SIZES=64,128,256`,
 `DATASET_ID=user/dataset`, `NO_DATASET=1` (pas de téléchargement).
 

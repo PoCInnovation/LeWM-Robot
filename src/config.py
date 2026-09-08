@@ -92,6 +92,9 @@ def hardware_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
                                    latents pré-encodés pendant le training
         num_workers     : int|"auto" — workers DataLoader (encodage)
         compile         : bool   — torch.compile du predictor (défaut False)
+        power_limit_percent : float — pourcentage du TGP NVIDIA (défaut 80)
+        power_limit_required: bool  — refuser le calcul si inapplicable
+        gpu_index       : int    — index nvidia-smi/PyTorch (défaut 0)
     """
     defaults = {
         "tf32": True,
@@ -100,6 +103,9 @@ def hardware_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "data_device": "auto",
         "num_workers": "auto",
         "compile": False,
+        "power_limit_percent": 80,
+        "power_limit_required": True,
+        "gpu_index": 0,
     }
     hw = dict(defaults)
     hw.update(cfg.get("hardware") or {})
@@ -107,9 +113,15 @@ def hardware_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def setup_hardware(cfg: Dict[str, Any], verbose: bool = True) -> Dict[str, Any]:
-    """Applique la section `hardware` (TF32, cuDNN) et la renvoie."""
-    from src.device import configure_backend
+    """Applique la section `hardware` (limite de puissance, TF32, cuDNN)."""
+    from src.device import configure_backend, configure_power_limit
     hw = hardware_config(cfg)
+    configure_power_limit(
+        percent=float(hw["power_limit_percent"]),
+        gpu_index=int(hw["gpu_index"]),
+        required=bool(hw["power_limit_required"]),
+        verbose=verbose,
+    )
     configure_backend(tf32=bool(hw["tf32"]),
                       cudnn_benchmark=bool(hw["cudnn_benchmark"]),
                       verbose=verbose)

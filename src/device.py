@@ -13,18 +13,140 @@ qu'à appeler `configure_backend()` en tête puis `resolve_amp_dtype()` :
     - nombre de workers DataLoader ;
     - AdamW fused, torch.compile opt-in ;
     - suivi de la VRAM (pic alloué) pour calibrer les batch sizes.
+    - plafond de puissance NVIDIA vérifié avant calcul (80 % par défaut).
 
 Reste 100 % fonctionnel sur CPU (tout devient no-op / fp32).
 """
 
 from __future__ import annotations
+import atexit
 import os
 import re
+import shutil
+import subprocess
 from typing import Dict, Iterable, Optional, Tuple, Union
 
 import torch
 
 DeviceLike = Union[str, torch.device]
+
+# Une même commande Python peut appeler setup_hardware() plusieurs fois. On ne
+# doit ni réappliquer la limite ni enregistrer plusieurs restaurations atexit.
+_POWER_LIMIT_STATES: Dict[int, Tuple[str, float]] = {}
+
+
+def _find_nvidia_smi() -> Optional[str]:
+    """Trouve nvidia-smi sur Linux/WSL et sur une installation Windows standard."""
+    executable = shutil.which("nvidia-smi")
+    if executable:
+        return executable
+    if os.name == "nt":
+        program_files = os.environ.get("ProgramW6432", r"C:\Program Files")
+        candidate = os.path.join(
+            program_files, "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe")
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def _run_nvidia_smi(executable: str, args: list[str]) -> str:
+    result = subprocess.run(
+        [executable, *args], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "erreur inconnue").strip()
+        raise RuntimeError(f"nvidia-smi a échoué : {detail}")
+    return result.stdout.strip()
+
+
+def _query_power_limits(executable: str, gpu_index: int) -> Tuple[float, ...]:
+    output = _run_nvidia_smi(executable, [
+        "-i", str(gpu_index),
+        "--query-gpu=power.limit,power.default_limit,power.min_limit,power.max_limit",
+        "--format=csv,noheader,nounits",
+    ])
+    line = next((line for line in output.splitlines() if line.strip()), "")
+    try:
+        values = tuple(float(value.strip()) for value in line.split(","))
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Limites de puissance illisibles pour le GPU {gpu_index} : {line!r}"
+        ) from exc
+    if len(values) != 4:
+        raise RuntimeError(
+            f"Réponse nvidia-smi inattendue pour le GPU {gpu_index} : {line!r}")
+    return values
+
+
+def _set_power_limit(executable: str, gpu_index: int, watts: float) -> None:
+    value = f"{watts:.1f}".rstrip("0").rstrip(".")
+    _run_nvidia_smi(executable, ["-i", str(gpu_index), "-pl", value])
+
+
+def _restore_power_limit(executable: str, gpu_index: int, watts: float) -> None:
+    try:
+        _set_power_limit(executable, gpu_index, watts)
+        print(f"[Device] Limite GPU {gpu_index} restaurée à {watts:.0f} W.")
+    except Exception as exc:  # pragma: no cover - exécuté à la fermeture
+        print(f"[Device] ATTENTION : restauration de la limite GPU impossible : {exc}")
+
+
+def configure_power_limit(percent: float = 80.0, gpu_index: int = 0,
+                          required: bool = True,
+                          restore_at_exit: bool = True,
+                          verbose: bool = True) -> Optional[float]:
+    """Limite la puissance NVIDIA à ``percent`` du TGP par défaut.
+
+    Le réglage est appliqué avec ``nvidia-smi`` et vérifié avant tout calcul
+    lourd. Si ``required`` est vrai, l'entraînement est refusé quand la limite
+    ne peut pas être garantie (PowerShell doit généralement être administrateur).
+    La limite présente avant le lancement est restaurée à la sortie normale.
+    """
+    if not torch.cuda.is_available():
+        return None
+    if not 1 <= float(percent) <= 100:
+        raise ValueError("hardware.power_limit_percent doit être entre 1 et 100")
+    if gpu_index < 0:
+        raise ValueError("hardware.gpu_index doit être positif")
+    if gpu_index in _POWER_LIMIT_STATES:
+        return _query_power_limits(_POWER_LIMIT_STATES[gpu_index][0], gpu_index)[0]
+
+    try:
+        executable = _find_nvidia_smi()
+        if not executable:
+            raise RuntimeError("nvidia-smi est introuvable")
+        current, default, minimum, maximum = _query_power_limits(
+            executable, gpu_index)
+        target = round(default * float(percent) / 100.0, 1)
+        if target < minimum:
+            raise RuntimeError(
+                f"{percent:g} % du TGP ({target:.1f} W) est inférieur à la "
+                f"limite matérielle minimale ({minimum:.1f} W)")
+        target = min(target, maximum)
+
+        # Une limite déjà plus stricte est conservée.
+        if current > target + 0.5:
+            _set_power_limit(executable, gpu_index, target)
+            verified, _, _, _ = _query_power_limits(executable, gpu_index)
+            if verified > target + 0.5:
+                raise RuntimeError(
+                    f"limite demandée {target:.1f} W, limite active {verified:.1f} W")
+            if restore_at_exit:
+                _POWER_LIMIT_STATES[gpu_index] = (executable, current)
+                atexit.register(_restore_power_limit, executable, gpu_index, current)
+            current = verified
+
+        if verbose:
+            print(f"[Device] GPU {gpu_index} limité à {current:.0f} W "
+                  f"({percent:g} % du TGP par défaut de {default:.0f} W).")
+        return current
+    except Exception as exc:
+        message = (
+            f"Impossible de garantir la limite GPU à {percent:g} % : {exc}. "
+            "Sous Windows, lancer PowerShell en administrateur.")
+        if required:
+            raise RuntimeError(message) from exc
+        print(f"[Device] ATTENTION : {message}")
+        return None
 
 
 def validate_cuda_runtime(require_cuda: bool = False) -> None:
