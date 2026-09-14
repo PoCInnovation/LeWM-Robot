@@ -35,6 +35,7 @@ from src.predictor import WorldModelPredictor, PredictorConfig
 from src.fusion import make_fusion
 from src.lora import LoRAConfig, inject_lora, get_lora_parameters
 from src.config import load_config, set_seed, log_environment, setup_hardware
+from src.data import split_train_val, describe_split
 from src.device import (resolve_amp_dtype, place_tensors, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
                         peak_vram_gb, reset_peak_vram)
@@ -134,9 +135,9 @@ def main():
                                "z_global_t1", "action"))
 
     # Split train/val (gardons quelques démos en val)
-    perm = torch.randperm(n, generator=torch.Generator().manual_seed(cfg["seed"]))
-    val_size = max(1, n // 5)
-    val_idx, train_idx = perm[:val_size], perm[val_size:]
+    train_idx, val_idx = split_train_val(real, seed=cfg["seed"],
+                                         val_fraction=float(cfg.get("dataset", {}).get("val_fraction", 0.2)))
+    print(f"Split : {describe_split(real, train_idx, val_idx)}")
 
     fusion.to(device).eval()        # fusion gelée (entraînée en Phase A)
     for p in fusion.parameters():

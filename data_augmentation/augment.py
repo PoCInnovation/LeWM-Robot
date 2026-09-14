@@ -2,6 +2,7 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -9,6 +10,11 @@ import cv2
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from data_augmentation import transforms as T
 
 DEFAULT_SRC = "duck_dataset"
 DEFAULT_DST = "duck_dataset_augmented"
@@ -75,36 +81,23 @@ def concat_clips(clip_paths, out_path):
 
 def aug_crop_resize(fw, ff, rng):
     h, w = fw[0].shape[:2]
-    s = rng.uniform(0.75, 0.95)
-    ch, cw = int(h * s), int(w * s)
-    t = int(rng.integers(0, h - ch + 1))
-    l = int(rng.integers(0, w - cw + 1))
-    out_w = [cv2.resize(a[t:t + ch, l:l + cw], (w, h)) for a in fw]
-    out_f = [cv2.resize(b[t:t + ch, l:l + cw], (w, h)) for b in ff]
-    return out_w, out_f
+    params = T.sample_crop(rng, h, w)
+    return ([T.apply_crop(a, params) for a in fw],
+            [T.apply_crop(b, params) for b in ff])
 
 
 def aug_gaussian_blur(fw, ff, rng):
-    k = int(rng.choice([3, 5, 7]))
-    sigma = float(rng.uniform(0.5, 1.5))
-    out_w = [cv2.GaussianBlur(a, (k, k), sigma) for a in fw]
-    out_f = [cv2.GaussianBlur(b, (k, k), sigma) for b in ff]
-    return out_w, out_f
+    params = T.sample_blur(rng)
+    return ([T.apply_blur(a, params) for a in fw],
+            [T.apply_blur(b, params) for b in ff])
 
 
 def aug_color_jitter(fw, ff, rng, brightness=0.2, contrast=0.2, saturation=0.2):
-    bv = float(rng.uniform(1 - brightness, 1 + brightness))
-    cv_ = float(rng.uniform(1 - contrast, 1 + contrast))
-    sv = float(rng.uniform(1 - saturation, 1 + saturation))
-
-    def jitter(frame):
-        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float32)
-        hsv[:, :, 1] = np.clip(hsv[:, :, 1] * sv, 0, 255)
-        hsv[:, :, 2] = np.clip(hsv[:, :, 2] * bv, 0, 255)
-        bgr = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR).astype(np.float32)
-        return np.clip(bgr * cv_, 0, 255).astype(np.uint8)
-
-    return [jitter(a) for a in fw], [jitter(b) for b in ff]
+    params = T.sample_color(rng, T.Strength(color_brightness=brightness,
+                                            color_contrast=contrast,
+                                            color_saturation=saturation))
+    return ([T.apply_color(a, params) for a in fw],
+            [T.apply_color(b, params) for b in ff])
 
 
 def aug_speed(fw, ff, df, rng, factor):
@@ -141,10 +134,13 @@ def aug_temporal_crop(fw, ff, df, rng, ratio=0.7):
 
 
 def aug_motor_noise(fw, ff, df, rng, sigma=0.01):
+    """Equivalent offline de la technique `sensor` du pipeline online."""
     ndf = df.copy()
+    strength = T.Strength(sensor_sigma=sigma)
     for col in ["action", "observation.state"]:
         arr = np.stack(ndf[col].values).astype(np.float32)
-        ndf[col] = list(arr + rng.normal(0, sigma, arr.shape).astype(np.float32))
+        noise = T.sample_sensor_noise(rng, arr.shape, strength)
+        ndf[col] = list(T.apply_sensor_noise(arr, noise))
     return fw, ff, ndf
 
 
