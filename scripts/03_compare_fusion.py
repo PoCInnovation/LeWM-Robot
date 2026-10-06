@@ -17,6 +17,7 @@ Usage:
 
 import sys
 import json
+import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,6 +29,7 @@ import matplotlib.pyplot as plt
 
 from src.fusion import FUSION_STRATEGIES, make_fusion
 from src.probes import ActionProbe, train_probe, ProbeTrainConfig
+from src.tracking import Stopwatch, add_wandb_args, tracker_from_args
 
 
 # Stratégies à comparer (on évite proprio_guided dans la baseline pour rester simple)
@@ -40,7 +42,15 @@ STRATEGIES_TO_TEST = [
 
 
 def main():
-    encoded_path = ROOT / "results/encoded/encoded_data.pt"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--encoded-data", default="results/encoded/encoded_data.pt")
+    parser.add_argument("--n-epochs", type=int, default=30)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    add_wandb_args(parser)
+    args = parser.parse_args()
+
+    encoded_path = ROOT / args.encoded_data
     if not encoded_path.exists():
         print(f"[ERREUR] Pas de données encodées trouvées : {encoded_path}")
         print("Lance d'abord : python scripts/02_encode_dataset.py <dataset_id>")
@@ -114,6 +124,22 @@ def main():
 
         # Pour entraîner conjointement, on doit donner les RAW wrist+global au train
         # → on re-prend les indices et on entraîne avec une boucle adaptée
+        # Un run W&B par stratégie, dans un groupe commun.
+        run = tracker_from_args(
+            args, default_name=f"fusion-{strategy_name}", root=ROOT,
+            group=args.wandb_group or "fusion-comparison",
+            extra_config={
+                "fusion_strategy": strategy_name,
+                "fusion_params": n_fusion_params,
+                "output_tokens": z_fused_train.shape[1],
+                "embed_dim": dim,
+                "action_dim": action_dim,
+                "n_train": len(train_idx),
+                "n_val": len(val_idx),
+                "phase": "M1_fusion",
+            },
+        )
+
         result = train_joint(
             fusion=fusion,
             probe=probe,
@@ -123,10 +149,18 @@ def main():
             z_wrist_val=z_wrist[val_idx],
             z_global_val=z_global[val_idx],
             actions_val=actions[val_idx],
-            n_epochs=30,
-            lr=1e-3,
-            batch_size=32,
+            n_epochs=args.n_epochs,
+            lr=args.lr,
+            batch_size=args.batch_size,
+            on_epoch=lambda metrics: run.log(metrics, step=metrics["epoch"]),
         )
+
+        run.log_summary({
+            "best_val_mae": result["best_val_loss"],
+            "final_val_mae": result["final_val_loss"],
+            "final_train_mae": result["final_train_loss"],
+        })
+        run.finish()
 
         results[strategy_name] = {
             "params":           n_fusion_params,
@@ -160,8 +194,11 @@ def main():
 
 def train_joint(fusion, probe, z_wrist_train, z_global_train, actions_train,
                 z_wrist_val, z_global_val, actions_val,
-                n_epochs=30, lr=1e-3, batch_size=32):
-    """Entraîne fusion + probe conjointement avec une loss MSE sur l'action."""
+                n_epochs=30, lr=1e-3, batch_size=32, on_epoch=None):
+    """Entraîne fusion + probe conjointement avec une loss MSE sur l'action.
+
+    on_epoch : callable optionnel recevant un dict de métriques par epoch.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     fusion.to(device).train()
@@ -180,6 +217,7 @@ def train_joint(fusion, probe, z_wrist_train, z_global_train, actions_train,
     best_val = float("inf")
 
     for epoch in range(n_epochs):
+        epoch_clock = Stopwatch()
         # Train
         fusion.train(); probe.train()
         perm = torch.randperm(n)
@@ -204,6 +242,14 @@ def train_joint(fusion, probe, z_wrist_train, z_global_train, actions_train,
 
         best_val = min(best_val, val_mae)
         history.append((train_mae, val_mae))
+
+        if on_epoch is not None:
+            on_epoch({
+                "epoch": epoch,
+                "train/mae": train_mae,
+                "val/mae": val_mae,
+                "perf/epoch_seconds": epoch_clock.elapsed,
+            })
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(f"  epoch {epoch+1:3d}/{n_epochs}  "

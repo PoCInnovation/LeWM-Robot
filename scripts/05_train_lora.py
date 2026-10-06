@@ -27,6 +27,13 @@ from src.predictor import WorldModelPredictor, PredictorConfig
 from src.fusion import make_fusion
 from src.lora import LoRAConfig, inject_lora, get_lora_parameters
 from src.config import load_config, set_seed, log_environment
+from src.tracking import (
+    Stopwatch,
+    add_wandb_args,
+    gpu_peak_memory_gb,
+    reset_gpu_peak_memory,
+    tracker_from_args,
+)
 
 
 def main():
@@ -45,6 +52,9 @@ def main():
     parser.add_argument("--n-epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=5e-4)
+    parser.add_argument("--log-every", type=int, default=20,
+                        help="Fréquence (en batches) du log de la loss instantanée.")
+    add_wandb_args(parser)
     args = parser.parse_args()
 
     cfg = load_config(ROOT / args.config)
@@ -117,15 +127,38 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.n_epochs)
 
+    # === Suivi W&B ===
+    run = tracker_from_args(
+        args, default_name=f"lora-r{args.lora_rank}", cfg=cfg, root=ROOT,
+        extra_config={
+            "device": device,
+            "embed_dim": ckpt["embed_dim"],
+            "fusion_name": ckpt["fusion_name"],
+            "n_pairs": n,
+            "n_train": len(train_idx),
+            "n_val": len(val_idx),
+            "predictor_params": predictor.count_parameters(),
+            "lora_params": n_lora,
+            "lora_trainable_fraction": round(n_lora / predictor.count_parameters(), 5),
+            "sim_checkpoint_val_loss": ckpt.get("val_loss"),
+            "phase": "B_real",
+        },
+    )
+
     # === Training loop ===
     print(f"\n=== Training LoRA sur démos réelles ===\n")
     history = []
     best_val = float("inf")
+    global_step = 0
+    run_clock = Stopwatch()
 
     for epoch in range(args.n_epochs):
+        epoch_clock = Stopwatch()
+        reset_gpu_peak_memory()
         predictor.train()
         perm = torch.randperm(len(train_idx))
         train_losses = []
+        grad_norms = []
 
         for i in tqdm(range(0, len(perm), args.batch_size),
                        desc=f"Epoch {epoch + 1}/{args.n_epochs}"):
@@ -146,9 +179,19 @@ def main():
 
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(lora_params, max_norm=1.0)
+            grad_norm = float(torch.nn.utils.clip_grad_norm_(lora_params, max_norm=1.0))
             optimizer.step()
             train_losses.append(loss.item())
+            grad_norms.append(grad_norm)
+            global_step += 1
+
+            if args.log_every and global_step % args.log_every == 0:
+                run.log({
+                    "train/batch_loss": loss.item(),
+                    "train/grad_norm": grad_norm,
+                    "train/lr": scheduler.get_last_lr()[0],
+                    "epoch": epoch,
+                }, step=global_step)
 
         train_loss = sum(train_losses) / len(train_losses)
 
@@ -170,9 +213,25 @@ def main():
                 val_losses.append(nn.functional.mse_loss(pred, z_t1).item())
 
         val_loss = sum(val_losses) / len(val_losses)
+        # Relevé avant scheduler.step(), sinon c'est le lr de l'epoch suivant.
+        current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
         history.append({"epoch": epoch, "train": train_loss, "val": val_loss})
-        print(f"  train={train_loss:.5f}  val={val_loss:.5f}")
+        epoch_seconds = epoch_clock.elapsed
+        print(f"  train={train_loss:.5f}  val={val_loss:.5f}  {epoch_seconds:.0f}s")
+
+        run.log({
+            "epoch": epoch,
+            "train/loss": train_loss,
+            "val/loss": val_loss,
+            "train/lr": current_lr,
+            "train/grad_norm_mean": sum(grad_norms) / len(grad_norms),
+            "train/grad_norm_max": max(grad_norms),
+            "perf/epoch_seconds": epoch_seconds,
+            "perf/samples_per_s": (len(train_idx) / epoch_seconds
+                                   if epoch_seconds > 0 else 0.0),
+            "perf/gpu_peak_gb": gpu_peak_memory_gb(),
+        }, step=global_step)
 
         if val_loss < best_val:
             best_val = val_loss
@@ -190,10 +249,28 @@ def main():
                 "history":              history,
             }, out_path)
             print(f"  [Best val, saved]")
+            run.log_artifact(
+                out_path, name="predictor_real", artifact_type="model",
+                metadata={"epoch": epoch, "val_loss": val_loss,
+                          "lora_rank": args.lora_rank, "lora_alpha": args.lora_alpha},
+            )
+
+    total_seconds = run_clock.elapsed
+    run.log_summary({
+        "best_val_loss": best_val,
+        "total_seconds": total_seconds,
+        "epochs": args.n_epochs,
+        "sim_to_real_gap": (best_val - ckpt["val_loss"]
+                            if ckpt.get("val_loss") is not None else None),
+    })
+    run.finish()
 
     print(f"\n=== LoRA training terminé ===")
     print(f"Best val loss : {best_val:.5f}")
+    print(f"Durée         : {total_seconds / 60:.1f} min")
     print(f"Checkpoint    : {out_path}")
+    if run.url:
+        print(f"W&B           : {run.url}")
 
 
 if __name__ == "__main__":

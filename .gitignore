@@ -35,7 +35,9 @@ dist/
 results/encoded/
 results/checkpoints/
 results/wandb/
-results/*.png       # ! enlever cette ligne si tu veux versionner les plots
+# ! enlever la ligne suivante si tu veux versionner les plots
+# (un commentaire en fin de ligne ferait partie du motif, d'ou la ligne separee)
+results/*.png
 results/*.svg
 results/*.json
 !results/.gitkeep

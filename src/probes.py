@@ -103,7 +103,8 @@ def train_probe(probe: nn.Module,
                 y_train: torch.Tensor,
                 z_val: torch.Tensor,
                 y_val: torch.Tensor,
-                config: ProbeTrainConfig) -> dict:
+                config: ProbeTrainConfig,
+                on_epoch=None) -> dict:
     """
     Entraîne un probe et renvoie un dict de métriques.
 
@@ -113,6 +114,7 @@ def train_probe(probe: nn.Module,
         y_train : (N, ...) cibles d'entraînement
         z_val, y_val : équivalents de validation
         config  : hyperparamètres
+        on_epoch: callable optionnel recevant un dict de métriques par epoch.
 
     Returns:
         dict avec 'final_train_loss', 'final_val_loss', 'best_val_loss', 'history'
@@ -154,6 +156,9 @@ def train_probe(probe: nn.Module,
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         best_val = min(best_val, val_loss)
+
+        if on_epoch is not None:
+            on_epoch({"epoch": epoch, "train/loss": train_loss, "val/loss": val_loss})
 
         if (epoch + 1) % config.log_every == 0 or epoch == 0:
             print(f"  epoch {epoch + 1:3d}/{config.n_epochs}  "

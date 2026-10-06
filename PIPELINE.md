@@ -25,7 +25,8 @@ dans l'espace latent.
 │   ├── predictor.py           World model action-conditionné (LoRA-friendly)
 │   ├── lora.py                Injection LoRA + merge
 │   ├── losses.py              MSE multi-step + cosine + DANN backup
-│   └── planner.py             CEM planner + MPC controller
+│   ├── planner.py             CEM planner + MPC controller
+│   └── tracking.py            Suivi W&B (optionnel)
 ├── scripts/
 │   ├── 01_test_dinov3.py            Sanity check DINOv3
 │   ├── 02_encode_dataset.py         Pré-encode dataset (sim ou réel)
@@ -33,9 +34,10 @@ dans l'espace latent.
 │   ├── 04_train_predictor.py        Train predictor sur Isaac sim (M4)
 │   ├── 05_train_lora.py             Train LoRA sur démos réelles (M4)
 │   └── 06_inference_demo.py         Démo end-to-end avec CEM planner (M5)
-├── results/                   Outputs (encoded data, checkpoints, plots)
-├── tests/                     (à venir)
-└── DEPLOYMENT.md              Guide pour la machine GPU
+├── results/                   Outputs (encoded data, checkpoints, plots, runs W&B)
+├── tests/                     Tests (pytest, sans GPU)
+├── DEPLOYMENT.md              Guide pour la machine GPU
+└── WANDB.md                   Mode d'emploi du suivi d'expériences
 ```
 
 ## Setup
@@ -74,10 +76,19 @@ python scripts/03_compare_fusion.py
 - [x] CEM planner + MPC controller
 - [x] Scripts de training (04, 05) écrits et import-checks OK
 - [x] Script d'inférence end-to-end (06)
+- [x] Suivi d'expériences W&B branché dans 03 / 04 / 05
 - [ ] Encodage du dataset complet (à faire sur GPU)
 - [ ] Training predictor + LoRA (à faire sur GPU)
 - [ ] Setup Isaac Lab (Milestone 2)
 - [ ] Génération sim data (Milestone 3)
+
+## Suivi d'expériences
+
+Weights & Biases est branché dans `03_compare_fusion`, `04_train_predictor` et
+`05_train_lora`. Optionnel : sans `wandb` installé, le training tourne sans
+logging.
+
+Mode d'emploi : [WANDB.md](WANDB.md).
 
 ## Choix techniques
 
