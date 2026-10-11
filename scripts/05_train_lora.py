@@ -39,6 +39,7 @@ from src.data import split_train_val, describe_split
 from src.device import (resolve_amp_dtype, place_tensors, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
                         peak_vram_gb, reset_peak_vram)
+from src.tracking import Stopwatch, add_wandb_args, tracker_from_args
 
 
 def resolve(p) -> Path:
@@ -67,6 +68,9 @@ def main():
     parser.add_argument("--data-device", default=None,
                         help="auto / cuda / cpu — où héberger les latents")
     parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--log-every", type=int, default=20,
+                        help="Fréquence (en batches) du log de la loss instantanée.")
+    add_wandb_args(parser)
     args = parser.parse_args()
 
     cfg = load_config(ROOT / args.config)
@@ -164,15 +168,39 @@ def main():
             pred = predictor(z_t, act)
         return nn.functional.mse_loss(pred.float(), z_t1.float())
 
+    # === Suivi W&B ===
+    run = tracker_from_args(
+        args, default_name=f"lora-r{args.lora_rank}", cfg=cfg, root=ROOT,
+        extra_config={
+            "device": device,
+            "amp_dtype": str(amp_dtype),
+            "data_device": str(data_device),
+            "compile": use_compile,
+            "embed_dim": ckpt["embed_dim"],
+            "fusion_name": ckpt["fusion_name"],
+            "n_pairs": n,
+            "n_train": len(train_idx),
+            "n_val": len(val_idx),
+            "predictor_params": raw_predictor.count_parameters(),
+            "lora_params": n_lora,
+            "lora_trainable_fraction": round(n_lora / raw_predictor.count_parameters(), 5),
+            "sim_checkpoint_val_loss": ckpt.get("val_loss"),
+            "phase": "B_real",
+        },
+    )
+
     # === Training loop ===
     print(f"\n=== Training LoRA sur démos réelles ===\n")
     history = []
     best_val = float("inf")
+    global_step = 0
+    run_clock = Stopwatch()
 
     for epoch in range(args.n_epochs):
         predictor.train()
         perm = train_idx[torch.randperm(len(train_idx))]
         train_losses = []
+        grad_norms = []
         reset_peak_vram()
         t_epoch = time.time()
 
@@ -181,9 +209,19 @@ def main():
             loss = run_batch(perm[i:i + args.batch_size])
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(lora_params, max_norm=1.0)
+            grad_norm = float(torch.nn.utils.clip_grad_norm_(lora_params, max_norm=1.0))
             optimizer.step()
             train_losses.append(loss.item())
+            grad_norms.append(grad_norm)
+            global_step += 1
+
+            if args.log_every and global_step % args.log_every == 0:
+                run.log({
+                    "train/batch_loss": loss.item(),
+                    "train/grad_norm": grad_norm,
+                    "train/lr": scheduler.get_last_lr()[0],
+                    "epoch": epoch,
+                }, step=global_step)
 
         train_loss = sum(train_losses) / len(train_losses)
 
@@ -195,6 +233,8 @@ def main():
                 val_losses.append(run_batch(val_idx[i:i + args.batch_size]).item())
 
         val_loss = sum(val_losses) / len(val_losses)
+        # Relevé avant scheduler.step(), sinon c'est le lr de l'epoch suivant.
+        current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
         epoch_s = time.time() - t_epoch
         vram = peak_vram_gb() if device == "cuda" else 0.0
@@ -202,6 +242,19 @@ def main():
                         "epoch_seconds": epoch_s, "peak_vram_gb": vram})
         print(f"  train={train_loss:.5f}  val={val_loss:.5f}  "
               f"[{epoch_s:.0f}s, VRAM pic {vram:.1f} GB]")
+
+        run.log({
+            "epoch": epoch,
+            "train/loss": train_loss,
+            "val/loss": val_loss,
+            "train/lr": current_lr,
+            "train/grad_norm_mean": sum(grad_norms) / len(grad_norms),
+            "train/grad_norm_max": max(grad_norms),
+            "perf/epoch_seconds": epoch_s,
+            "perf/samples_per_s": (len(train_idx) / epoch_s
+                                   if epoch_s > 0 else 0.0),
+            "perf/gpu_peak_gb": vram if device == "cuda" else None,
+        }, step=global_step)
 
         if val_loss < best_val:
             best_val = val_loss
@@ -219,10 +272,28 @@ def main():
                 "history":              history,
             }, out_path)
             print(f"  [Best val, saved]")
+            run.log_artifact(
+                out_path, name="predictor_real", artifact_type="model",
+                metadata={"epoch": epoch, "val_loss": val_loss,
+                          "lora_rank": args.lora_rank, "lora_alpha": args.lora_alpha},
+            )
+
+    total_seconds = run_clock.elapsed
+    run.log_summary({
+        "best_val_loss": best_val,
+        "total_seconds": total_seconds,
+        "epochs": args.n_epochs,
+        "sim_to_real_gap": (best_val - ckpt["val_loss"]
+                            if ckpt.get("val_loss") is not None else None),
+    })
+    run.finish()
 
     print(f"\n=== LoRA training terminé ===")
     print(f"Best val loss : {best_val:.5f}")
+    print(f"Durée         : {total_seconds / 60:.1f} min")
     print(f"Checkpoint    : {out_path}")
+    if run.url:
+        print(f"W&B           : {run.url}")
 
 
 if __name__ == "__main__":

@@ -40,6 +40,7 @@ from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.data import split_train_val, describe_split
 from src.device import (resolve_amp_dtype, place_tensors, make_adamw,
                         autocast_ctx, peak_vram_gb, reset_peak_vram)
+from src.tracking import Stopwatch, add_wandb_args, tracker_from_args
 
 
 # Stratégies à comparer (on évite proprio_guided dans la baseline pour rester simple)
@@ -71,6 +72,7 @@ def main():
     parser.add_argument("--data-device", default=None,
                         help="auto / cuda / cpu — où héberger les latents. "
                              "Défaut : hardware.data_device")
+    add_wandb_args(parser)
     args = parser.parse_args()
 
     cfg = load_config(ROOT / args.config)
@@ -143,6 +145,27 @@ def main():
         # Probe d'action
         probe = ActionProbe(dim=dim, action_dim=action_dim, hidden=hidden)
 
+        # Un run W&B par stratégie, dans un groupe commun.
+        run = tracker_from_args(
+            args, default_name=f"fusion-{strategy_name}", cfg=cfg, root=ROOT,
+            group=args.wandb_group or "fusion-comparison",
+            extra_config={
+                "fusion_strategy": strategy_name,
+                "fusion_params": n_fusion_params,
+                "embed_dim": dim,
+                "action_dim": action_dim,
+                "n_train": len(train_idx),
+                "n_val": len(val_idx),
+                "n_epochs_effective": n_epochs,
+                "batch_size_effective": batch_size,
+                "lr": lr,
+                "weight_decay": weight_decay,
+                "amp_dtype": str(amp_dtype),
+                "data_device": str(data_device),
+                "phase": "M1_fusion",
+            },
+        )
+
         # Joint train fusion + probe
         result = train_joint(
             fusion=fusion,
@@ -151,9 +174,19 @@ def main():
             train_idx=train_idx, val_idx=val_idx,
             n_epochs=n_epochs, lr=lr, weight_decay=weight_decay,
             batch_size=batch_size, device=device, amp_dtype=amp_dtype,
+            on_epoch=lambda metrics: run.log(metrics, step=metrics["epoch"]),
         )
         if device == "cuda":
             print(f"  VRAM pic : {peak_vram_gb():.2f} GB")
+
+        run.log_summary({
+            "best_val_mae": result["best_val_loss"],
+            "final_val_mae": result["final_val_loss"],
+            "final_train_mae": result["final_train_loss"],
+            "output_tokens": result["output_tokens"],
+            "peak_vram_gb": peak_vram_gb() if device == "cuda" else None,
+        })
+        run.finish()
 
         results[strategy_name] = {
             "params":           n_fusion_params,
@@ -192,12 +225,14 @@ def main():
 
 def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
                 n_epochs=30, lr=1e-3, weight_decay=1e-4, batch_size=32,
-                device="cpu", amp_dtype=None):
+                device="cpu", amp_dtype=None, on_epoch=None):
     """
     Entraîne fusion + probe conjointement avec une loss L1 (MAE) sur l'action.
 
     Les latents sont indexés là où ils sont hébergés (VRAM ou RAM) et
     transférés par batch si besoin (no-op quand ils sont déjà en VRAM).
+
+    on_epoch : callable optionnel recevant un dict de métriques par epoch.
     """
     fusion.to(device).train()
     probe.to(device).train()
@@ -216,6 +251,7 @@ def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
     output_tokens = None
 
     for epoch in range(n_epochs):
+        epoch_clock = Stopwatch()
         # Train
         fusion.train(); probe.train()
         perm = train_idx[torch.randperm(n)]
@@ -247,6 +283,14 @@ def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
 
         best_val = min(best_val, val_mae)
         history.append((train_mae, val_mae))
+
+        if on_epoch is not None:
+            on_epoch({
+                "epoch": epoch,
+                "train/mae": train_mae,
+                "val/mae": val_mae,
+                "perf/epoch_seconds": epoch_clock.elapsed,
+            })
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(f"  epoch {epoch+1:3d}/{n_epochs}  "

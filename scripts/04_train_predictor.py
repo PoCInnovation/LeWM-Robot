@@ -39,6 +39,7 @@ from src.data import split_train_val, describe_split
 from src.device import (resolve_amp_dtype, place_tensors, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
                         peak_vram_gb, reset_peak_vram)
+from src.tracking import Stopwatch, add_wandb_args, tracker_from_args
 
 
 def resolve(p) -> Path:
@@ -71,6 +72,9 @@ def main():
                              "Défaut : hardware.data_device")
     parser.add_argument("--compile", action="store_true",
                         help="torch.compile du predictor (défaut : hardware.compile)")
+    parser.add_argument("--log-every", type=int, default=50,
+                        help="Fréquence (en batches) du log de la loss instantanée.")
+    add_wandb_args(parser)
     args = parser.parse_args()
 
     cfg = load_config(ROOT / args.config)
@@ -143,16 +147,38 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.n_epochs)
 
+    # === Suivi W&B ===
+    run = tracker_from_args(
+        args, default_name=f"predictor-{args.fusion}", cfg=cfg, root=ROOT,
+        extra_config={
+            "device": device,
+            "amp_dtype": str(amp_dtype),
+            "data_device": str(data_device),
+            "compile": use_compile,
+            "embed_dim": embed_dim,
+            "action_dim": action_dim,
+            "n_pairs": n,
+            "n_train": len(train_idx),
+            "n_val": len(val_idx),
+            "fusion_params": sum(p.numel() for p in fusion.parameters()),
+            "predictor_params": raw_predictor.count_parameters(),
+            "phase": "A_sim",
+        },
+    )
+
     # === Training loop ===
     print(f"\n=== Training {args.n_epochs} epochs ===\n")
     history = []
     best_val = float("inf")
+    global_step = 0
+    run_clock = Stopwatch()
 
     for epoch in range(args.n_epochs):
         # Train
         fusion.train(); predictor.train()
         perm = train_idx[torch.randperm(len(train_idx))]
         train_losses = []
+        grad_norms = []
         reset_peak_vram()
         t_epoch = time.time()
 
@@ -170,9 +196,19 @@ def main():
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(params, max_norm=1.0)
+            grad_norm = float(torch.nn.utils.clip_grad_norm_(params, max_norm=1.0))
             optimizer.step()
             train_losses.append(loss.item())
+            grad_norms.append(grad_norm)
+            global_step += 1
+
+            if args.log_every and global_step % args.log_every == 0:
+                run.log({
+                    "train/batch_loss": loss.item(),
+                    "train/grad_norm": grad_norm,
+                    "train/lr": scheduler.get_last_lr()[0],
+                    "epoch": epoch,
+                }, step=global_step)
 
         train_loss = sum(train_losses) / len(train_losses)
 
@@ -190,15 +226,30 @@ def main():
                     nn.functional.mse_loss(pred.float(), z_t1.float()).item())
 
         val_loss = sum(val_losses) / len(val_losses)
+        # Relevé avant scheduler.step(), sinon c'est le lr de l'epoch suivant.
+        current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
         epoch_s = time.time() - t_epoch
         vram = peak_vram_gb() if device == "cuda" else 0.0
+        samples_per_s = len(train_idx) / epoch_s if epoch_s > 0 else 0.0
 
         history.append({"epoch": epoch, "train": train_loss, "val": val_loss,
                         "epoch_seconds": epoch_s, "peak_vram_gb": vram})
         print(f"  train={train_loss:.5f}  val={val_loss:.5f}  "
-              f"lr={scheduler.get_last_lr()[0]:.2e}  "
-              f"[{epoch_s:.0f}s, VRAM pic {vram:.1f} GB]")
+              f"lr={current_lr:.2e}  "
+              f"[{epoch_s:.0f}s, {samples_per_s:.0f} éch/s, VRAM pic {vram:.1f} GB]")
+
+        run.log({
+            "epoch": epoch,
+            "train/loss": train_loss,
+            "val/loss": val_loss,
+            "train/lr": current_lr,
+            "train/grad_norm_mean": sum(grad_norms) / len(grad_norms),
+            "train/grad_norm_max": max(grad_norms),
+            "perf/epoch_seconds": epoch_s,
+            "perf/samples_per_s": samples_per_s,
+            "perf/gpu_peak_gb": vram if device == "cuda" else None,
+        }, step=global_step)
 
         # Save best
         if val_loss < best_val:
@@ -215,10 +266,27 @@ def main():
                 "history":              history,
             }, out_path)
             print(f"  [Best val, saved to {out_path.name}]")
+            run.log_artifact(
+                out_path, name="predictor_simu", artifact_type="model",
+                metadata={"epoch": epoch, "val_loss": val_loss,
+                          "fusion": args.fusion, "embed_dim": embed_dim},
+            )
+
+    total_seconds = run_clock.elapsed
+    run.log_summary({
+        "best_val_loss": best_val,
+        "total_seconds": total_seconds,
+        "total_hours": round(total_seconds / 3600, 3),
+        "epochs": args.n_epochs,
+    })
+    run.finish()
 
     print(f"\n=== Training terminé ===")
     print(f"Best val loss : {best_val:.5f}")
+    print(f"Durée         : {total_seconds / 60:.1f} min")
     print(f"Checkpoint    : {out_path}")
+    if run.url:
+        print(f"W&B           : {run.url}")
 
 
 if __name__ == "__main__":

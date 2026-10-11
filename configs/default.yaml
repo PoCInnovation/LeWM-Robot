@@ -80,6 +80,13 @@ probe:
   weight_decay: 1.0e-4
   hidden_dim: 512
 
+# Suivi W&B — voir WANDB.md
+# Priorité : options CLI > WANDB_PROJECT / WANDB_MODE > ceci.
+wandb:
+  project: "lewm-robot-wm"
+  mode: null                            # null = auto / "online" / "offline" / "disabled"
+  log_artifacts: false                  # true = téléverse les checkpoints
+
 # Reproductibilité
 seed: 42
 

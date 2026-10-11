@@ -29,7 +29,8 @@ dans l'espace latent.
 │   ├── predictor.py           World model action-conditionné (LoRA-friendly)
 │   ├── lora.py                Injection LoRA + merge
 │   ├── losses.py              MSE multi-step + cosine + DANN backup
-│   └── planner.py             CEM planner (autocast bf16, rollouts par chunks) + MPC controller
+│   ├── planner.py             CEM planner (autocast bf16, rollouts par chunks) + MPC controller
+│   └── tracking.py            Suivi W&B (optionnel)
 ├── scripts/
 │   ├── 00_check_gpu.py              Vérifie runtime Blackwell et kernels SDPA/backward/AdamW
 │   ├── 01_test_dinov3.py            Sanity check encodeur (+ débit, cos-sim bf16/fp32)
@@ -39,9 +40,10 @@ dans l'espace latent.
 │   ├── 05_train_lora.py             Train LoRA sur démos réelles (M4)
 │   └── 06_inference_demo.py         Démo end-to-end avec CEM planner (M5)
 │   └── 07_benchmark.py              Mini-trains chronométrés → estimation du temps d'un run complet
-├── results/                   Outputs (encoded data, checkpoints, plots)
-├── tests/                     pytest : adaptation GPU (CPU-only + 4 tests GPU)
-└── DEPLOYMENT.md              Guide machine RTX 5090 (install, run_local.sh, réglages, dépannage)
+├── results/                   Outputs (encoded data, checkpoints, plots, runs W&B)
+├── tests/                     pytest : adaptation GPU (CPU-only + 4 tests GPU) + suivi W&B
+├── DEPLOYMENT.md              Guide machine RTX 5090 (install, run_local.sh, réglages, dépannage)
+└── WANDB.md                   Mode d'emploi du suivi d'expériences
 ```
 
 ## Setup
@@ -89,10 +91,19 @@ make bench          # (= python scripts/07_benchmark.py ... avec log)
 - [x] Scripts de training (04, 05) écrits et import-checks OK
 - [x] Script d'inférence end-to-end (06)
 - [x] Support logiciel RTX 5090 (validation matérielle à effectuer) : bf16/TF32, SDPA, latents en VRAM, `run_local.sh`, tests (`python -m pytest tests/`)
+- [x] Suivi d'expériences W&B branché dans 03 / 04 / 05
 - [ ] Encodage du dataset complet (à faire sur GPU)
 - [ ] Training predictor + LoRA (à faire sur GPU)
 - [ ] Setup Isaac Lab (Milestone 2)
 - [ ] Génération sim data (Milestone 3)
+
+## Suivi d'expériences
+
+Weights & Biases est branché dans `03_compare_fusion`, `04_train_predictor` et
+`05_train_lora`. Optionnel : sans `wandb` installé, le training tourne sans
+logging.
+
+Mode d'emploi : [WANDB.md](WANDB.md).
 
 ## Choix techniques
 
