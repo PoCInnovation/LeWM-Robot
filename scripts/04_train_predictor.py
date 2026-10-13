@@ -93,6 +93,10 @@ def main():
                         help="torch.compile du predictor (défaut : hardware.compile)")
     parser.add_argument("--log-every", type=int, default=50,
                         help="Fréquence (en batches) du log de la loss instantanée.")
+    parser.add_argument("--action-mode", default="absolute",
+                        choices=["absolute", "delta"],
+                        help="absolute : position cible ; delta : déplacement "
+                             "commandé (cible − état courant). Voir ActionStats.")
     parser.add_argument("--seed", type=int, default=None,
                         help="Seed de l'initialisation et de l'ordre des batches "
                              "(défaut : seed de la config). Le split train/val garde "
@@ -188,7 +192,8 @@ def main():
 
     # Actions en z-score (stats du train, sauvées dans le checkpoint : 05 les
     # réutilise, 06 en tire les bornes du CEM et dénormalise ses actions).
-    action_stats = train_action_stats(data, train_idx)
+    action_stats = train_action_stats(data, train_idx, mode=args.action_mode)
+    print(f"Actions : mode {args.action_mode}")
     latents.normalize_actions(action_stats)
 
     # === Optimizer ===

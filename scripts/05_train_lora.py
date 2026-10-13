@@ -155,8 +155,9 @@ def main():
         sys.exit("[ERREUR] Checkpoint sans action_stats : réentraîner 04 avec le "
                  "code actuel (actions normalisées).")
     if args.action_stats == "real":
-        action_stats = train_action_stats(real, train_idx)
-        print("  Stats d'actions : recalculées sur le train réel")
+        mode = ActionStats.from_dict(ckpt["action_stats"]).mode
+        action_stats = train_action_stats(real, train_idx, mode=mode)
+        print(f"  Stats d'actions : recalculées sur le train réel (mode {mode})")
     else:
         action_stats = ActionStats.from_dict(ckpt["action_stats"])
     latents.normalize_actions(action_stats)

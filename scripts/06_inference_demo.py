@@ -152,7 +152,7 @@ def demo_from_dataset(args, encoder, fusion, predictor, device):
     print(f"  z_current shape : {tuple(z_current.shape)}")
     print(f"  z_goal shape    : {tuple(z_goal.shape)}")
 
-    return z_current, z_goal, current_sample["action"]
+    return z_current, z_goal, current_sample["action"], current_sample["proprio"]
 
 
 def main():
@@ -236,7 +236,7 @@ def main():
     print(f"  Predictor params : {sum(p.numel() for p in predictor.parameters()):,}")
 
     # === Récupérer les latents current et goal ===
-    z_current, z_goal, action_taken = demo_from_dataset(
+    z_current, z_goal, action_taken, proprio = demo_from_dataset(
         args, encoder, fusion, predictor, device)
 
     # === CEM Planner ===
@@ -248,6 +248,10 @@ def main():
     planner = make_planner(predictor, meta["action_dim"], args, hw, stats)
     actions, diag = timed_plan(planner, z_current, z_goal)
     actions = stats.denormalize(actions.float().cpu())     # → degrés SO-101
+    if stats.mode == "delta":
+        # déplacements → cibles : seul le 1er pas part de l'état courant connu ;
+        # les suivants partent de la cible précédente (≈ état atteint)
+        actions = proprio.float().cpu() + actions.cumsum(0)
     print(f"Actions shape    : {tuple(actions.shape)}")
     print(f"Best cost final  : {diag['best_cost'][-1]:.5f}")
     print(f"Cost evolution   : {[round(c, 5) for c in diag['best_cost']]}")

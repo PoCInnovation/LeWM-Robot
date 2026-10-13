@@ -84,6 +84,8 @@ class LatentPairs:
         else:
             tensors = {k: data[k] for k in LEGACY_KEYS}
         tensors["action"] = torch.as_tensor(data["action"]).float()
+        if "proprio" in data:          # état courant : actions en mode "delta"
+            tensors["proprio"] = torch.as_tensor(data["proprio"]).float()
 
         self.tensors, self.device = place_tensors(
             tensors, requested, self.train_device, verbose=verbose,
@@ -125,7 +127,15 @@ class LatentPairs:
         return tuple(self._out(x) for x in out) + (self._out(t["action"][idx]),)
 
     def normalize_actions(self, stats: "ActionStats") -> None:
-        """Passe les actions hébergées en espace normalisé (une fois, sur place)."""
+        """Passe les actions hébergées en espace normalisé (une fois, sur place).
+
+        Mode "delta" : l'action devient le déplacement commandé (cible − état
+        courant) avant normalisation, comme dans `action_targets`.
+        """
+        if stats.mode == "delta":
+            if "proprio" not in self.tensors:
+                raise ValueError("Actions en mode delta : latents sans 'proprio'.")
+            self.tensors["action"] = self.tensors["action"] - self.tensors["proprio"]
         self.tensors["action"] = stats.normalize(self.tensors["action"])
 
     def materialize(self, idx: torch.Tensor) -> Dict[str, torch.Tensor]:
@@ -152,23 +162,36 @@ class ActionStats:
     le CEM y échantillonne (moyenne 0, écart-type 1 = distribution du dataset,
     bornes = min/max du dataset). Les stats voyagent dans le checkpoint ; les
     actions planifiées sont dénormalisées avant affichage / envoi au robot.
+
+    mode :
+        "absolute" — l'action est la position cible des articulations ;
+        "delta"    — l'action est le déplacement commandé (cible − état
+                     courant). Sur les démos réelles, la cible est presque la
+                     position courante (écart-type 2–6° contre 25–55°) : en
+                     absolu, le signal utile pèse ~10 % et le predictor finit
+                     par ignorer l'action ; en delta, il pèse 100 %.
+                     Cible à envoyer au robot = état courant + delta.
     """
     mean: List[float]
     std: List[float]
     low: List[float]
     high: List[float]
+    mode: str = "absolute"
 
     @classmethod
-    def from_actions(cls, actions: torch.Tensor, min_std: float = 1e-6) -> "ActionStats":
+    def from_actions(cls, actions: torch.Tensor, min_std: float = 1e-6,
+                     mode: str = "absolute") -> "ActionStats":
         a = actions.double()
         std = a.std(0, unbiased=False)
         std = torch.where(std < min_std, torch.ones_like(std), std)  # articulation figée
         return cls(mean=a.mean(0).tolist(), std=std.tolist(),
-                   low=a.min(0).values.tolist(), high=a.max(0).values.tolist())
+                   low=a.min(0).values.tolist(), high=a.max(0).values.tolist(),
+                   mode=mode)
 
     @classmethod
     def from_dict(cls, d: Dict[str, List[float]]) -> "ActionStats":
-        return cls(**{k: list(d[k]) for k in ("mean", "std", "low", "high")})
+        return cls(**{k: list(d[k]) for k in ("mean", "std", "low", "high")},
+                   mode=d.get("mode", "absolute"))
 
     def to_dict(self) -> Dict[str, List[float]]:
         return asdict(self)
@@ -188,12 +211,26 @@ class ActionStats:
                 self.normalize(torch.tensor(self.high)))
 
 
-def train_action_stats(data: dict, train_idx: torch.Tensor) -> ActionStats:
+ACTION_MODES = ("absolute", "delta")
+
+
+def action_targets(data: dict, mode: str = "absolute") -> torch.Tensor:
+    """Actions telles que le predictor les voit (avant normalisation)."""
+    actions = torch.as_tensor(data["action"]).float()
+    if mode == "delta":
+        actions = actions - torch.as_tensor(data["proprio"]).float()
+    elif mode != "absolute":
+        raise ValueError(f"mode d'action inconnu : {mode}")
+    return actions
+
+
+def train_action_stats(data: dict, train_idx: torch.Tensor,
+                       mode: str = "absolute") -> ActionStats:
     """Stats des actions du train, hors échantillons augmentés (bruit capteur)."""
-    actions = torch.as_tensor(data["action"])[train_idx]
+    actions = action_targets(data, mode)[train_idx]
     is_aug = data.get("is_augmented")
     if is_aug is not None:
         clean = ~torch.as_tensor(is_aug).flatten().bool()[train_idx]
         if bool(clean.any()):
             actions = actions[clean]
-    return ActionStats.from_actions(actions.float())
+    return ActionStats.from_actions(actions.float(), mode=mode)

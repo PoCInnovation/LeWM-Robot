@@ -130,3 +130,20 @@ def test_reserve_decides_vram_hosting():
     assert choose_data_device(int(free * 0.5), "auto", "cuda", reserve_gb=0).type == "cuda"
     assert choose_data_device(int(free * 0.9), "auto", "cuda",
                               reserve_gb=free * 0.2 / 1e9).type == "cpu"
+
+
+def test_delta_action_mode_normalizes_commanded_displacement():
+    from src.latents import ActionStats, train_action_stats
+    n, P, D = 6, 2, 4
+    data = {"z_wrist": torch.zeros(n + 1, P, D), "z_global": torch.zeros(n + 1, P, D),
+            "idx_t": torch.arange(n), "idx_t1": torch.arange(1, n + 1),
+            "action": torch.tensor([[10.0, 50.0]] * n) + torch.arange(n)[:, None],
+            "proprio": torch.tensor([[9.0, 48.0]] * n) + torch.arange(n)[:, None]}
+    stats = train_action_stats(data, torch.arange(n), mode="delta")
+    assert stats.mode == "delta" and stats.mean == pytest.approx([1.0, 2.0])
+    assert ActionStats.from_dict(stats.to_dict()).mode == "delta"
+    assert ActionStats.from_dict({k: [0.0] for k in ("mean", "std", "low", "high")}).mode == "absolute"
+    lat = LatentPairs(data, "cpu", "cpu", verbose=False)
+    lat.normalize_actions(stats)
+    # déplacement constant (1, 2) → égal à la moyenne → 0 après normalisation
+    assert torch.allclose(lat.fetch(torch.arange(n))[-1], torch.zeros(n, 2))
