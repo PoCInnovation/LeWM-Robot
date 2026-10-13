@@ -40,7 +40,8 @@ make check
 ```
 
 L’installation fixe le couple officiel **torch 2.10.0 / torchvision 0.25.0**
-sur l’index CUDA 12.8. Transformers est limité à `>=4.56,<5` pour DINOv3.
+sur l’index CUDA 12.8. Transformers est en 5.x : lerobot >= 0.5 impose
+huggingface-hub >= 1.0, que transformers 4.x refuse à l’import.
 Les contraintes sont aussi appliquées à l’installation de LeRobot pour éviter
 qu’elle remplace ce couple. Un conflit de dépendances doit être résolu avant
 le lancement du pipeline.

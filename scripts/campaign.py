@@ -110,7 +110,9 @@ def stream(cmd: list, log_path: Path, env: dict) -> int:
                                 stderr=subprocess.STDOUT, text=True, bufsize=1)
         for line in proc.stdout:
             sys.stdout.write(line)
+            sys.stdout.flush()
             log.write(line)
+            log.flush()
         return proc.wait()
 
 
@@ -187,7 +189,7 @@ class Campaign:
         if self.dry_run:
             return
         code = stream(self.py("02", "--output", self.encoded),
-                      self.dir / "02_encode.log", dict(os.environ))
+                      self.dir / "02_encode.log", dict(os.environ, PYTHONUNBUFFERED="1"))
         if code != 0:
             sys.exit("[Campagne] 02 a échoué — voir 02_encode.log")
 
@@ -199,7 +201,7 @@ class Campaign:
             print("[Campagne] 03 : comparaison des fusions (une fois par campagne)")
             code = stream(self.py("03", "--encoded-data", self.encoded,
                                   "--wandb-group", f"{self.spec['name']}-03"),
-                          self.dir / "03_fusion.log", dict(os.environ))
+                          self.dir / "03_fusion.log", dict(os.environ, PYTHONUNBUFFERED="1"))
             src = resolve(self.cfg["paths"].get("fusion_results",
                                                 "results/fusion_comparison.json"))
             if code != 0 or not src.exists():
@@ -452,6 +454,9 @@ class Campaign:
 
 
 def main():
+    # Lancée sous nohup / tee, la sortie n'est pas un terminal : sans ça,
+    # Python la bufferise et le log reste vide pendant des minutes.
+    sys.stdout.reconfigure(line_buffering=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--campaign", default="configs/campaign_rtx4090.yaml")
     parser.add_argument("--dry-run", action="store_true",
