@@ -1,0 +1,51 @@
+# ═══════════════════════════════════════════════════════════════
+# Campagne c3_sim — 04 sur la simulation → LoRA sur duck_dataset_v3,
+# frameskip 5 + actions delta (cf. configs/campaign_fs5_real.yaml).
+#
+# Reprend c2 (configs/campaign_sim_lora.yaml) avec la correction trouvée
+# sur c1 : en t → t+1 et actions absolues, le predictor ignore l'action
+# sur les démos réelles, donc la LoRA de c2 hérite du même problème.
+# À comparer à c3_real sur la même val réelle (ratio vs identité de
+# C_lora contre celui du meilleur run de c3_real, puis le CEM).
+# ═══════════════════════════════════════════════════════════════
+
+name: c3_sim
+config: configs/rtx4090.yaml
+encoded_data: results/encoded/sim_encoded.pt       # 290 épisodes de simu (encodés par c2)
+fusion: cross_attn_bd                              # gagnante de 03 sur la simu (c2)
+real_data: results/encoded/encoded_data.pt         # duck_dataset_v3
+
+stages:
+  # Réglages issus de c2 (A : lr 3e-4 + sortie résiduelle en tête) ; la
+  # simu a ~3 fois plus de paires que le réel, donc moins de risque de
+  # surapprentissage : 6 et 4 couches, régularisation par défaut.
+  - name: A_screen
+    script: "04"
+    epochs: 15
+    fixed:
+      batch_size: 64
+      residual: true
+      frameskip: 5
+      action_mode: delta
+      weight_decay: 0.01
+      dropout: 0.1
+      fusion_ckpt: /root/c2/results/fusion_weights/cross_attn_bd.pt
+    grid: {lr: [1.0e-4, 3.0e-4], n_layers: [6, 4]}
+
+  # LoRA : frameskip et mode delta viennent du checkpoint ; stats d'actions
+  # recalculées sur le réel (unités : simu [-100, 100], robot en degrés) et
+  # embedding d'action réentraîné.
+  - name: C_lora
+    script: "05"
+    epochs: 20
+    requires: real_data
+    fixed: {batch_size: 32, action_stats: real, train_action_embed: true}
+    grid: {lr: [1.0e-4, 5.0e-4]}
+    variants:
+      - {lora_rank: 8, lora_alpha: 16}
+      - {lora_rank: 16, lora_alpha: 32}
+
+  - name: D_cem
+    script: "08"
+    fixed: {n_starts: 64, rollout_chunk: 500, n_iter: 3, cost: cosine}
+    grid: {horizon: [2, 4], n_samples: [300, 1000]}

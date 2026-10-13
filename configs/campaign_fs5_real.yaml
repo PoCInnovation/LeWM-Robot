@@ -1,0 +1,56 @@
+# ═══════════════════════════════════════════════════════════════
+# Campagne c3_real — démos réelles seules, frameskip 5 + actions delta.
+#
+# Pourquoi : diagnostic de c1 (04 sur duck_dataset_v3, paires t → t+1,
+# actions absolues) — le predictor ignorait l'action (loss identique avec
+# des actions mélangées) et le CEM faisait pire que l'action moyenne.
+# Test court (8 epochs) en frameskip 5 + delta : ratio vs identité 0,756
+# (contre 0,91) et loss +41 % avec des actions mélangées (contre +0 %).
+#
+# Baseline réel de c3_sim (configs/campaign_fs5_sim_lora.yaml).
+# ═══════════════════════════════════════════════════════════════
+
+name: c3_real
+config: configs/rtx4090.yaml
+encoded_data: results/encoded/encoded_data.pt     # duck_dataset_v3 (encodé par c1)
+fusion: cross_attn_bd                              # gagnante de 03 sur v3 (c1)
+real_data: null
+
+stages:
+  # Le test court surapprend après ~6 epochs (train baisse, val remonte) :
+  # la régularisation et la taille comptent ici, contrairement à c1. Le
+  # meilleur checkpoint (val) est gardé, 15 epochs suffisent.
+  - name: A_screen
+    script: "04"
+    epochs: 15
+    fixed:
+      batch_size: 64
+      residual: true
+      frameskip: 5
+      action_mode: delta
+      fusion_ckpt: /root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt
+    grid: {lr: [1.0e-4, 3.0e-4]}
+    variants:
+      - {n_layers: 6, weight_decay: 0.01, dropout: 0.1}
+      - {n_layers: 6, weight_decay: 0.1, dropout: 0.1}
+      - {n_layers: 4, weight_decay: 0.01, dropout: 0.1}
+
+  - name: A_seeds
+    script: "04"
+    epochs: 15
+    from_best: {stage: A_screen, top: 1, keep: [lr, n_layers, weight_decay, dropout]}
+    fixed:
+      batch_size: 64
+      residual: true
+      frameskip: 5
+      action_mode: delta
+      fusion_ckpt: /root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt
+    grid: {seed: [1, 2]}
+
+  # horizon en pas de 5 frames : 2 → 10 frames (0,33 s), 4 → 20 frames
+  # (0,67 s), comme les horizons 10 et 20 de c1. 3 itérations : en c1, 5
+  # faisaient pire (le CEM exploitait les erreurs du modèle).
+  - name: D_cem
+    script: "08"
+    fixed: {n_starts: 64, rollout_chunk: 500, n_iter: 3, cost: cosine}
+    grid: {horizon: [2, 4], n_samples: [300, 1000]}
