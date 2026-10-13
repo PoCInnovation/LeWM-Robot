@@ -4,12 +4,19 @@ Encode tes démos LeRobot HF avec DINOv3 et sauvegarde les patches sur disque.
 Pourquoi pré-encoder : une fois les latents sur disque, les expériences
 suivantes (fusions, predictor, LoRA) prennent quelques secondes/minutes.
 
-GPU (RTX 5090) :
+GPU (RTX 4090 24 GB / 5090 32 GB) :
     - encodeur en bf16 + SDPA, batch 64 par défaut : le goulot devient le
       DÉCODAGE VIDÉO côté CPU → --num-workers auto (= cœurs - 2, max 8),
       pin_memory + prefetch pour recouvrir le transfert PCIe ;
-    - le preprocessing tourne sur le GPU (images transférées brutes).
-    Le débit dépend du décodage vidéo : le mesurer avec 07_benchmark.py.
+    - images transférées en uint8, preprocessing sur le GPU.
+
+Mémoire (format v2, cf. src/latents.py) :
+    - passe propre sur les FRAMES uniques : la frame t+1 d'une paire est la
+      frame t de la suivante, elle n'est décodée/encodée/stockée qu'une fois ;
+    - latents stockés en bf16 (sortie native de l'encodeur bf16, sans perte) ;
+    - tables préallouées en VRAM si elles tiennent : la RAM ne porte ni les
+      latents ni les copies intermédiaires. Dataset complet (17 478 paires,
+      1 passe augmentée) : ~16 GB au lieu de 42 GB.
 
 Usage:
     python scripts/02_encode_dataset.py [--config configs/default.yaml]
@@ -30,14 +37,16 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from src.encoders import DINOv3Config, DINOv3Encoder
-from src.data import LeRobotDataConfig, LeRobotPairsDataset
+from src.data import LeRobotDataConfig, LeRobotPairsDataset, LeRobotFramesDataset
+from src.latents import FORMAT_VERSION, build_frame_index, latent_nbytes
 from src.augmentation import OnlineAugConfig
 from src.config import load_config, set_seed, log_environment, setup_hardware
-from src.device import resolve_num_workers, peak_vram_gb, reset_peak_vram
+from src.device import (resolve_num_workers, peak_vram_gb, reset_peak_vram,
+                        choose_data_device)
 
 
 def main():
@@ -136,60 +145,113 @@ def main():
         delta_timesteps=cfg["dataset"]["delta_timesteps"],
         cache_dir=cfg["dataset"]["cache_dir"],
         augment=aug_cfg,
+        uint8_images=True,
+        video_backend=cfg["dataset"].get("video_backend"),
     )
     base_dataset = LeRobotPairsDataset(data_cfg)
     dataset = base_dataset
     if args.max_pairs is not None and args.max_pairs < len(dataset):
-        from torch.utils.data import Subset
         # Subsample en gardant des paires de plusieurs épisodes (stride)
         step = len(dataset) // args.max_pairs
         dataset = Subset(dataset, list(range(0, len(dataset), step))[:args.max_pairs])
         print(f"[MAX-PAIRS] Sous-échantillonnage : {len(dataset)} paires (stride={step})")
 
+    # === Paires retenues → frames uniques de la passe propre ===
+    pair_ids = (list(dataset.indices) if isinstance(dataset, Subset)
+                else list(range(len(dataset))))
+    delta = data_cfg.delta_timesteps
+    pair_frames = [base_dataset.pair_frame(i) for i in pair_ids]
+    frames, clean_idx_t, clean_idx_t1 = build_frame_index(pair_frames, delta)
+    n_pairs = len(pair_ids)
+    n_aug_passes = n_passes - 1
+    n_frame_rows = len(frames) + n_aug_passes * 2 * n_pairs
+
+    latent_dtype = (encoder.dtype_ if encoder.dtype_ in (torch.bfloat16, torch.float16)
+                    else torch.float32)
+    nbytes = latent_nbytes(n_frame_rows, encoder.num_patches, encoder.embed_dim,
+                           latent_dtype)
+    # Tables en VRAM si elles tiennent (réserve pour l'encodeur et les batchs) :
+    # pas de copie GPU→CPU par batch, et la RAM ne porte pas les latents.
+    table_device = choose_data_device(nbytes, hw["data_device"],
+                                      "cuda" if on_gpu else "cpu", reserve_gb=4.0)
+
+    print(f"Total paires : {n_pairs}")
+    print(f"Passes       : {n_passes} (1 propre"
+          f"{f' + {n_aug_passes} augmentées' if n_aug_passes else ''})")
+    print(f"Frames       : {len(frames)} uniques (passe propre) + "
+          f"{n_aug_passes * 2 * n_pairs} augmentées = {n_frame_rows} lignes")
+    print(f"Latents      : {nbytes / 1e9:.1f} GB "
+          f"(2 caméras x {encoder.num_patches} patches x {encoder.embed_dim} dims x "
+          f"{str(latent_dtype).replace('torch.', '')}), tables sur {table_device}\n")
+
+    shape = (n_frame_rows, encoder.num_patches, encoder.embed_dim)
+    z_wrist = torch.empty(shape, dtype=latent_dtype, device=table_device)
+    z_global = torch.empty(shape, dtype=latent_dtype, device=table_device)
+
+    def encode_into(table, row, images):
+        z = encoder.encode(images, out_dtype=latent_dtype)
+        table[row:row + z.shape[0]] = z.to(table_device)
+        return row + z.shape[0]
+
     loader_kwargs = dict(batch_size=batch_size, num_workers=num_workers,
                          shuffle=False, pin_memory=on_gpu)
     if num_workers > 0:
-        loader_kwargs.update(persistent_workers=True, prefetch_factor=4)
+        loader_kwargs.update(persistent_workers=False, prefetch_factor=2)
 
-    n_rows = len(dataset) * n_passes
-    est_gb = n_rows * 4 * encoder.num_patches * encoder.embed_dim * 4 / 1e9
-    print(f"Total paires : {len(dataset)}")
-    print(f"Passes       : {n_passes} (1 propre"
-          f"{f' + {n_passes - 1} augmentées' if n_passes > 1 else ''})")
-    print(f"Lignes finales : {n_rows}")
-    print(f"Taille estimée du .pt : {est_gb:.1f} GB "
-          f"(4 images x {encoder.num_patches} patches x {encoder.embed_dim} dims x fp32)\n")
-
-    # === Encode ===
-    buf_z_wrist_t, buf_z_global_t = [], []
-    buf_z_wrist_t1, buf_z_global_t1 = [], []
-    buf_action, buf_proprio = [], []
-    buf_episode, buf_frame = [], []
-    buf_pair, buf_is_aug, buf_recipe = [], [], []
+    meta = {k: [] for k in ("action", "proprio", "episode_idx", "frame_idx",
+                            "pair_id", "is_augmented", "recipe_idx",
+                            "idx_t", "idx_t1")}
 
     t0 = time.time()
     with torch.inference_mode():
-        for pass_idx in range(n_passes):
-            base_dataset.set_augment(pass_idx > 0)
-            loader = DataLoader(dataset, **loader_kwargs)
-            desc = ("Encoding (propre)" if pass_idx == 0
-                    else f"Encoding (augmentée {pass_idx}/{n_passes - 1})")
-            for batch in tqdm(loader, desc=desc):
-                buf_z_wrist_t.append(encoder.encode(batch["wrist_t"]).cpu())
-                buf_z_global_t.append(encoder.encode(batch["global_t"]).cpu())
-                buf_z_wrist_t1.append(encoder.encode(batch["wrist_t1"]).cpu())
-                buf_z_global_t1.append(encoder.encode(batch["global_t1"]).cpu())
+        # ── Passe propre : chaque frame une seule fois ──
+        frame_action, frame_proprio = [], []
+        row = 0
+        loader = DataLoader(LeRobotFramesDataset(base_dataset, frames), **loader_kwargs)
+        for batch in tqdm(loader, desc="Encoding (propre, frames uniques)"):
+            encode_into(z_wrist, row, batch["wrist"])
+            row = encode_into(z_global, row, batch["global"])
+            frame_action.append(batch["action"])
+            frame_proprio.append(batch["proprio"])
+        del loader
+        frame_action = torch.cat(frame_action)
+        frame_proprio = torch.cat(frame_proprio)
 
-                buf_action.append(batch["action"])
-                buf_proprio.append(batch["proprio"])
-                buf_episode.append(batch["episode_idx"])
-                buf_frame.append(batch["frame_idx"])
-                buf_pair.append(batch["pair_id"])
-                buf_is_aug.append(batch["is_augmented"])
-                buf_recipe.append(batch["recipe_idx"])
+        meta["action"].append(frame_action[clean_idx_t])
+        meta["proprio"].append(frame_proprio[clean_idx_t])
+        meta["episode_idx"].append(torch.tensor(
+            [base_dataset._pairs_index[i][0] for i in pair_ids], dtype=torch.long))
+        meta["frame_idx"].append(torch.tensor(pair_frames, dtype=torch.long))
+        meta["pair_id"].append(torch.tensor(pair_ids, dtype=torch.long))
+        meta["is_augmented"].append(torch.zeros(n_pairs, dtype=torch.long))
+        meta["recipe_idx"].append(torch.zeros(n_pairs, dtype=torch.long))
+        meta["idx_t"].append(clean_idx_t)
+        meta["idx_t1"].append(clean_idx_t1)
+
+        # ── Passes augmentées : paramètres tirés par paire → 2 frames par paire ──
+        base_dataset.set_augment(True)
+        for pass_idx in range(1, n_passes):
+            loader = DataLoader(dataset, **loader_kwargs)
+            for batch in tqdm(loader, desc=f"Encoding (augmentée {pass_idx}/{n_aug_passes})"):
+                b = batch["action"].shape[0]
+                encode_into(z_wrist, row, torch.cat([batch["wrist_t"], batch["wrist_t1"]]))
+                encode_into(z_global, row, torch.cat([batch["global_t"], batch["global_t1"]]))
+                meta["idx_t"].append(torch.arange(row, row + b))
+                meta["idx_t1"].append(torch.arange(row + b, row + 2 * b))
+                row += 2 * b
+                for key in ("action", "proprio"):
+                    meta[key].append(batch[key])
+                meta["episode_idx"].append(batch["episode_idx"])
+                meta["frame_idx"].append(batch["frame_idx"])
+                meta["pair_id"].append(batch["pair_id"])
+                meta["is_augmented"].append(batch["is_augmented"])
+                meta["recipe_idx"].append(batch["recipe_idx"])
+            del loader
+    assert row == n_frame_rows, (row, n_frame_rows)
 
     dt = time.time() - t0
-    n_images = 4 * n_rows
+    n_images = 2 * n_frame_rows
+    n_rows = n_pairs * n_passes
     print(f"\nEncodage terminé en {dt:.1f}s "
           f"({dt / max(1, n_rows) * 1000:.1f} ms/paire, {n_images / dt:.0f} img/s)")
     if on_gpu:
@@ -198,23 +260,20 @@ def main():
               f"--num-workers : le décodage vidéo est le goulot)")
 
     # === Save ===
+    # torch.save copie les tables GPU vers la RAM une par une (pic RAM = une
+    # table, ~8 GB sur le dataset complet), pas les deux en même temps.
     torch.save(
         {
-            "z_wrist_t":    torch.cat(buf_z_wrist_t),
-            "z_global_t":   torch.cat(buf_z_global_t),
-            "z_wrist_t1":   torch.cat(buf_z_wrist_t1),
-            "z_global_t1":  torch.cat(buf_z_global_t1),
-            "action":       torch.cat(buf_action),
-            "proprio":      torch.cat(buf_proprio),
-            "episode_idx":  torch.cat(buf_episode),
-            "frame_idx":    torch.cat(buf_frame),
-            "pair_id":      torch.cat(buf_pair),
-            "is_augmented": torch.cat(buf_is_aug),
-            "recipe_idx":   torch.cat(buf_recipe),
-            "aug_passes":   n_passes - 1,
+            "format_version": FORMAT_VERSION,
+            "z_wrist":      z_wrist,
+            "z_global":     z_global,
+            **{k: torch.cat(v) for k, v in meta.items()},
+            "aug_passes":   n_aug_passes,
             "aug_config":   aug_cfg.__dict__ if augment_on else None,
             "embed_dim":    encoder.embed_dim,
             "num_patches":  encoder.num_patches,
+            "latent_dtype": str(latent_dtype).replace("torch.", ""),
+            "delta_timesteps": delta,
             "encoder_family": family,
             "encoder_size": cfg["encoder"]["size"],
             "encoder_dtype": str(encoder.dtype_).replace("torch.", ""),

@@ -20,6 +20,7 @@ Usage:
 """
 
 import sys
+import json
 import time
 import argparse
 from pathlib import Path
@@ -36,7 +37,8 @@ from src.fusion import make_fusion
 from src.lora import LoRAConfig, inject_lora, get_lora_parameters
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.data import split_train_val, describe_split
-from src.device import (resolve_amp_dtype, place_tensors, make_adamw,
+from src.latents import ActionStats, LatentPairs, load_encoded
+from src.device import (resolve_amp_dtype, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
                         peak_vram_gb, reset_peak_vram)
 from src.tracking import Stopwatch, add_wandb_args, tracker_from_args
@@ -120,28 +122,30 @@ def main():
         sys.exit(1)
 
     print(f"\nChargement des démos réelles : {real_path}")
-    real = torch.load(real_path, weights_only=False, map_location="cpu")
+    real = load_encoded(real_path)
     if real["embed_dim"] != ckpt["embed_dim"]:
         print(f"[ERREUR] embed_dim des données réelles ({real['embed_dim']}) != "
               f"checkpoint ({ckpt['embed_dim']}) — encodeurs différents ?")
         sys.exit(1)
-    n = len(real["action"])
+    latents = LatentPairs(real, args.data_device or hw["data_device"], device,
+                          reserve_gb=float(hw["vram_reserve_gb"]))
+    data_device = latents.device
+    fetch = latents.fetch
+    n = len(latents)
     print(f"  N paires : {n}")
-
-    tensors, data_device = place_tensors(
-        {k: real[k] for k in ("z_wrist_t", "z_global_t", "z_wrist_t1",
-                              "z_global_t1", "action")},
-        args.data_device or hw["data_device"], device)
-
-    def fetch(idx):
-        return tuple(tensors[k][idx].to(device, non_blocking=True)
-                     for k in ("z_wrist_t", "z_global_t", "z_wrist_t1",
-                               "z_global_t1", "action"))
 
     # Split train/val (gardons quelques démos en val)
     train_idx, val_idx = split_train_val(real, seed=cfg["seed"],
                                          val_fraction=float(cfg.get("dataset", {}).get("val_fraction", 0.2)))
     print(f"Split : {describe_split(real, train_idx, val_idx)}")
+
+    # Mêmes stats d'actions que le predictor de 04 : le LoRA adapte un modèle
+    # qui a appris dans cet espace normalisé, il ne faut pas le redéfinir.
+    if "action_stats" not in ckpt:
+        sys.exit("[ERREUR] Checkpoint sans action_stats : réentraîner 04 avec le "
+                 "code actuel (actions normalisées).")
+    action_stats = ActionStats.from_dict(ckpt["action_stats"])
+    latents.normalize_actions(action_stats)
 
     fusion.to(device).eval()        # fusion gelée (entraînée en Phase A)
     for p in fusion.parameters():
@@ -159,14 +163,17 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.n_epochs)
 
-    def run_batch(idx):
+    def run_batch(idx, with_identity=False):
         zw_t, zg_t, zw_t1, zg_t1, act = fetch(idx)
         with autocast_ctx(device, amp_dtype):
             with torch.no_grad():
                 z_t  = fusion(zw_t, zg_t)
                 z_t1 = fusion(zw_t1, zg_t1)
             pred = predictor(z_t, act)
-        return nn.functional.mse_loss(pred.float(), z_t1.float())
+        loss = nn.functional.mse_loss(pred.float(), z_t1.float())
+        if with_identity:
+            return loss, nn.functional.mse_loss(z_t.float(), z_t1.float())
+        return loss
 
     # === Suivi W&B ===
     run = tracker_from_args(
@@ -227,26 +234,35 @@ def main():
 
         # Val
         predictor.eval()
-        val_losses = []
+        val_losses, id_losses = [], []
         with torch.no_grad():
             for i in range(0, len(val_idx), args.batch_size):
-                val_losses.append(run_batch(val_idx[i:i + args.batch_size]).item())
+                loss, id_loss = run_batch(val_idx[i:i + args.batch_size],
+                                          with_identity=True)
+                val_losses.append(loss.item())
+                id_losses.append(id_loss.item())
 
         val_loss = sum(val_losses) / len(val_losses)
+        id_loss = sum(id_losses) / len(id_losses)
+        id_ratio = val_loss / id_loss if id_loss > 0 else float("nan")
         # Relevé avant scheduler.step(), sinon c'est le lr de l'epoch suivant.
         current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
         epoch_s = time.time() - t_epoch
         vram = peak_vram_gb() if device == "cuda" else 0.0
         history.append({"epoch": epoch, "train": train_loss, "val": val_loss,
+                        "val_identity": id_loss,
                         "epoch_seconds": epoch_s, "peak_vram_gb": vram})
         print(f"  train={train_loss:.5f}  val={val_loss:.5f}  "
+              f"(identité {id_loss:.5f}, ratio {id_ratio:.3f})  "
               f"[{epoch_s:.0f}s, VRAM pic {vram:.1f} GB]")
 
         run.log({
             "epoch": epoch,
             "train/loss": train_loss,
             "val/loss": val_loss,
+            "val/identity_mse": id_loss,
+            "val/ratio_vs_identity": id_ratio,
             "train/lr": current_lr,
             "train/grad_norm_mean": sum(grad_norms) / len(grad_norms),
             "train/grad_norm_max": max(grad_norms),
@@ -267,8 +283,10 @@ def main():
                 "lora_config":          lora_cfg.__dict__,
                 "embed_dim":            ckpt["embed_dim"],
                 "action_dim":           ckpt["action_dim"],
+                "action_stats":         action_stats.to_dict(),
                 "epoch":                epoch,
                 "val_loss":             val_loss,
+                "val_identity":         id_loss,
                 "history":              history,
             }, out_path)
             print(f"  [Best val, saved]")
@@ -279,8 +297,20 @@ def main():
             )
 
     total_seconds = run_clock.elapsed
+    best = min(history, key=lambda h: h["val"])
+    with open(out_path.with_name(out_path.stem + ".done.json"), "w") as f:
+        json.dump({
+            "best_val_loss": best_val,
+            "best_ratio_vs_identity": best["val"] / best["val_identity"],
+            "epochs": args.n_epochs,
+            "best_epoch": best["epoch"],
+            "epoch_seconds_mean": total_seconds / max(1, args.n_epochs),
+            "train_seconds": total_seconds,
+            "checkpoint": str(out_path),
+        }, f, indent=2)
     run.log_summary({
         "best_val_loss": best_val,
+        "best_ratio_vs_identity": best["val"] / best["val_identity"],
         "total_seconds": total_seconds,
         "epochs": args.n_epochs,
         "sim_to_real_gap": (best_val - ckpt["val_loss"]

@@ -25,13 +25,14 @@ class LoRAConfig:
     rank: int = 8                        # dimension intérieure (capacité d'adaptation)
     alpha: float = 16.0                  # facteur d'échelle (scaling = alpha/rank)
     dropout: float = 0.0                 # dropout sur la branche LoRA
-    target_modules: List[str] = None     # quels modules adapter
+    target_modules: List[str] = None     # noms (dernier segment) des Linear à adapter
+                                         # ([] ou ["*"] = toutes les nn.Linear)
 
     def __post_init__(self):
         if self.target_modules is None:
-            # Par défaut : adapter les linéaires des blocs transformer
-            self.target_modules = ["q_proj", "k_proj", "v_proj", "out_proj",
-                                    "in_proj_weight"]
+            # Par défaut : les projections d'attention du predictor
+            # (noms de MultiHeadSelfAttention dans src/predictor.py)
+            self.target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
 
 
 class LoRALinear(nn.Module):
@@ -110,9 +111,14 @@ def inject_lora(model: nn.Module, config: LoRAConfig,
     for param in model.parameters():
         param.requires_grad = False
 
-    # Parcourir les modules et remplacer les Linear par LoRALinear
-    for name, module in model.named_modules():
-        if isinstance(module, nn.Linear) and not isinstance(module, LoRALinear):
+    targets = config.target_modules or []
+    match_all = not targets or "*" in targets
+
+    # Parcourir les modules et remplacer les Linear ciblées par LoRALinear
+    # (liste figée avant mutation : un module wrappé n'est jamais revisité)
+    for name, module in list(model.named_modules()):
+        if (isinstance(module, nn.Linear) and not isinstance(module, LoRALinear)
+                and (match_all or name.rsplit(".", 1)[-1] in targets)):
             # Décomposer le nom pour accéder au parent
             parts = name.rsplit(".", 1)
             if len(parts) == 1:

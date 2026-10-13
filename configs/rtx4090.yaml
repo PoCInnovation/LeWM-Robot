@@ -1,0 +1,18 @@
+# ═══════════════════════════════════════════════════════════════
+# RTX 4090 louée (24 GB VRAM, 32 GB RAM) — run d'entraînement final.
+# Ne liste que ce qui change par rapport à default.yaml.
+#
+#   PY_CONFIG=configs/rtx4090.yaml bash run_local.sh
+#
+# Budget mémoire du dataset complet (17 478 paires, 1 passe augmentée) :
+#   latents v2 bf16 ~16 GB → en VRAM, + ~4 GB de training (04, batch 64)
+#   RAM : pic ~8 GB à la sauvegarde de 02, latents lus en mmap ailleurs.
+# ═══════════════════════════════════════════════════════════════
+base: default.yaml
+
+hardware:
+  # Machine louée : on demande le plafond 80 % mais sans bloquer si le
+  # conteneur refuse `nvidia-smi -pl` (pas root sur l'hôte).
+  power_limit_required: false
+  # 24 GB - 16 GB de latents = ~8 GB libres ; 04 en batch 64 en prend ~4.
+  vram_reserve_gb: 5

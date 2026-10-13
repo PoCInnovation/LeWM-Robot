@@ -50,6 +50,7 @@ from src.predictor import WorldModelPredictor, PredictorConfig
 from src.lora import LoRAConfig, inject_lora, get_lora_parameters
 from src.planner import CEMPlanner, CEMConfig
 from src.config import load_config, set_seed, log_environment, setup_hardware
+from src.latents import LatentPairs, load_encoded
 from src.device import (resolve_amp_dtype, resolve_num_workers, place_tensors,
                         make_adamw, autocast_ctx, peak_vram_gb, reset_peak_vram,
                         gpu_summary)
@@ -179,12 +180,16 @@ def load_latents(cfg, args, device, hw):
     if not path.is_absolute():
         path = ROOT / path
     if path.exists():
-        d = torch.load(path, weights_only=False, map_location="cpu")
-        n = len(d["action"])
-        print(f"[Latents] réels : {path.name} — {n} paires, "
-              f"{d['z_wrist_t'].shape[1]} patches × {d['embed_dim']}")
-        tensors = {k: d[k] for k in ("z_wrist_t", "z_global_t", "z_wrist_t1",
-                                     "z_global_t1", "action")}
+        # Format v2 (frames uniques) ou v1 : comme en synthétique, on ne
+        # matérialise (en paires v1 fp32) que ce qu'il faut pour les steps ;
+        # l'estimation porte sur le nombre réel de paires.
+        pairs = LatentPairs(load_encoded(path), "cpu", "cpu", verbose=False)
+        n_total = len(pairs)
+        n = min(n_total, max(args.batch_sizes) * 4)
+        g = torch.Generator().manual_seed(0)
+        tensors = pairs.materialize(torch.randperm(n_total, generator=g)[:n])
+        print(f"[Latents] réels : {path.name} — {n_total} paires "
+              f"({n} échantillonnées), {pairs.num_patches} patches × {pairs.embed_dim}")
         source = "real"
     else:
         fam = cfg["encoder"].get("family", "dinov3")
@@ -198,8 +203,9 @@ def load_latents(cfg, args, device, hw):
         print(f"[Latents] synthétiques : {fam}-{cfg['encoder']['size']} → "
               f"{P} patches × {D}, extrapolation sur --n-pairs {args.n_pairs}")
         source = "synthetic"
+        n_total = args.n_pairs
     tensors, data_device = place_tensors(tensors, hw["data_device"], device)
-    return tensors, data_device, source
+    return tensors, data_device, source, n_total
 
 
 def sample_idx(n_avail, bs):
@@ -468,8 +474,7 @@ def main():
                          "fusion_epochs": args.fusion_epochs,
                          "lora_epochs": args.lora_epochs, "steps": args.steps}}
 
-    tensors, data_device, source = load_latents(cfg, args, device, hw)
-    n_pairs = tensors["action"].shape[0] if source == "real" else args.n_pairs
+    tensors, data_device, source, n_pairs = load_latents(cfg, args, device, hw)
     n_real = args.n_real_pairs or n_pairs
     report["latents"] = {"source": source, "n_pairs": n_pairs,
                          "data_device": str(data_device)}

@@ -9,7 +9,7 @@ qu'à appeler `configure_backend()` en tête puis `resolve_amp_dtype()` :
     - cuDNN benchmark (shapes fixes → autotune des kernels) ;
     - autocast bf16 si le GPU le supporte (Ampere+, donc 5090 : oui) ;
     - choix du device pour héberger les latents pré-encodés (VRAM si ça tient :
-      selon la mémoire libre mesurée, avec une réserve pour le training) ;
+      mémoire libre mesurée moins une réserve fixe pour le training) ;
     - nombre de workers DataLoader ;
     - AdamW fused, torch.compile opt-in ;
     - suivi de la VRAM (pic alloué) pour calibrer les batch sizes.
@@ -291,14 +291,23 @@ def reset_peak_vram(device: DeviceLike = "cuda") -> None:
         torch.cuda.reset_peak_memory_stats(torch.device(device))
 
 
+def ram_total_gb() -> float:
+    """RAM physique totale (0 si inconnue)."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9
+    except (AttributeError, ValueError, OSError):
+        return 0.0
+
+
 def choose_data_device(nbytes: int, requested: str = "auto",
                        train_device: DeviceLike = "cuda",
-                       max_fraction: float = 0.45) -> torch.device:
+                       reserve_gb: float = 5.0) -> torch.device:
     """
     Où héberger les latents pré-encodés pendant le training.
 
-    'auto' : en VRAM si `nbytes` <= max_fraction × VRAM libre (il faut laisser
-    la place au modèle, aux activations et à l'optimiseur), sinon RAM CPU.
+    'auto' : en VRAM si `nbytes` + `reserve_gb` <= VRAM libre (la réserve
+    couvre modèle, activations et optimiseur : ~3.6 GB pour 04 en batch 64),
+    sinon RAM CPU.
     'cuda' / 'cpu' : forcé.
     """
     train_device = torch.device(train_device)
@@ -308,31 +317,38 @@ def choose_data_device(nbytes: int, requested: str = "auto",
     if req in ("cuda", "gpu"):
         return train_device
     free = vram_free_gb(train_device) * 1e9
-    if nbytes <= max_fraction * free:
+    if nbytes + reserve_gb * 1e9 <= free:
         return train_device
-    print(f"[Device] Latents ({nbytes / 1e9:.1f} GB) > {max_fraction:.0%} de la "
-          f"VRAM libre ({free / 1e9:.1f} GB) → restent en RAM CPU.")
+    print(f"[Device] Latents ({nbytes / 1e9:.1f} GB) + réserve training "
+          f"({reserve_gb:g} GB) > VRAM libre ({free / 1e9:.1f} GB) → restent en RAM CPU.")
     return torch.device("cpu")
 
 
 def place_tensors(tensors: Dict[str, torch.Tensor], requested: str,
-                  train_device: DeviceLike, verbose: bool = True
+                  train_device: DeviceLike, verbose: bool = True,
+                  reserve_gb: float = 5.0
                   ) -> Tuple[Dict[str, torch.Tensor], torch.device]:
     """
     Héberge un dict de tenseurs (latents pré-encodés) en VRAM si possible.
 
     Renvoie (tenseurs déplacés, device choisi). Avec les tenseurs en VRAM,
     l'indexation `z[idx]` d'un batch reste sur le GPU : zéro transfert PCIe
-    pendant le training. Sinon ils restent en RAM (pinned si CUDA dispo)
-    et chaque batch est transféré à la volée.
+    pendant le training. Sinon ils restent en RAM et chaque batch est
+    transféré à la volée ; ils ne sont pinned que s'ils pèsent moins d'un
+    quart de la RAM (pin_memory copie : 2x la taille en pic).
+
+    Copie tenseur par tenseur : avec des tenseurs mmap (load_encoded), la RAM
+    ne voit jamais plus d'un tenseur à la fois.
     """
     nbytes = sum(t.numel() * t.element_size() for t in tensors.values())
-    target = choose_data_device(nbytes, requested, train_device)
+    target = choose_data_device(nbytes, requested, train_device, reserve_gb)
+    pin = (target.type == "cpu" and torch.cuda.is_available()
+           and nbytes <= 0.25 * ram_total_gb() * 1e9)
     out = {}
     for k, t in tensors.items():
         if target.type == "cuda":
-            out[k] = t.to(target, non_blocking=True)
-        elif torch.cuda.is_available():
+            out[k] = t.to(target)
+        elif pin:
             out[k] = t.pin_memory()
         else:
             out[k] = t

@@ -1,0 +1,108 @@
+# ═══════════════════════════════════════════════════════════════
+# Campagne d'entraînement — RTX 4090 louée, sans surveillance.
+#
+#   python scripts/campaign.py --campaign configs/campaign_rtx4090.yaml --dry-run
+#   python scripts/campaign.py --campaign configs/campaign_rtx4090.yaml
+#
+# Relancer la même commande après une coupure : les runs terminés
+# (<run>/*.done.json) sont sautés, le run interrompu reprend à son
+# dernier epoch (04 --resume) et son run W&B continue (même id).
+#
+# Données : 40 épisodes, 17 478 paires (t, t+1) ; split par épisode
+# → 32 épisodes train (~14 000 paires propres + autant d'augmentées ≈
+# 28 000 lignes, ~437 pas/epoch en batch 64), 8 épisodes val (~3 500
+# paires) ; les chiffres exacts dépendent des épisodes tirés en val.
+# ═══════════════════════════════════════════════════════════════
+
+name: c1                                  # changer = nouvelle campagne (dossiers + ids W&B neufs)
+config: configs/rtx4090.yaml
+encoded_data: results/encoded/encoded_data.pt   # encodé par 02 s'il manque
+fusion: auto                              # auto = gagnante de 03 (lancé une fois) ; ou un nom
+# Décision (2026-10-11) : campagne SANS LoRA. 04 s'entraîne déjà sur les démos
+# réelles (duck_dataset_v3) ; une LoRA sur les mêmes données n'apporte rien, et
+# le dataset de simulation prévu (Sim-to-Real-SO-101-Robot/ROADMAP_DATASET.md)
+# n'est pas encore collecté. Cette campagne sert de baseline ; la variante
+# « 04 sur la simu → LoRA sur duck_dataset_v3 » viendra avec le dataset sim.
+real_data: null                           # démos réelles pré-encodées DISTINCTES → étape LoRA
+
+stages:
+  # ── A. Criblage du predictor (04) ───────────────────────────────
+  # lr : le seul réglage de 04 jamais varié ; 1e-4 (défaut du code) encadré
+  #      d'un demi-ordre de grandeur de chaque côté.
+  # residual : sortie z_t + head initialisée à « rien ne bouge ». Mesuré sur
+  #      données synthétiques (400 pas) : ratio vs identité 9,3 en sortie
+  #      LayerNorm contre 0,41 en résiduel ; non tranché sur le smoke réel
+  #      (64 lignes de train) → c'est cette étape qui décide, sur 32 épisodes.
+  # 6 couches (défaut) ; la taille est testée en B, une fois lr/sortie fixés.
+  # 15 epochs ≈ 6 500 pas ; le cosine descend à 0 en fin de run, donc ces
+  #      runs courts sont complets et comparables entre eux.
+  # Batch fixe à 64 : le changer modifie aussi le lr effectif (confusion avec
+  #      le sweep de lr), et les 16 GB de latents en VRAM laissent ~8 GB.
+  - name: A_screen
+    script: "04"
+    epochs: 15
+    fixed: {batch_size: 64, n_layers: 6, weight_decay: 0.01, dropout: 0.1}
+    grid: {lr: [3.0e-5, 1.0e-4, 3.0e-4], residual: [false, true]}
+
+  # ── B. Taille + régularisation + entraînement long (04) ─────────
+  # Les 2 meilleures configs de A (lr, sortie), 30 epochs :
+  #   - même réglage qu'en A → gain des epochs supplémentaires ;
+  #   - weight decay ×10 seul (dropout inchangé) → utile si A montre un
+  #     écart train/val (val = 8 épisodes jamais vus) ; un seul paramètre
+  #     change, donc un gain lui est attribuable ;
+  #   - 4 couches → un modèle plus petit généralise-t-il mieux avec 32
+  #     épisodes ? (~1,8 M params par couche en dim 384)
+  - name: B_regul
+    script: "04"
+    epochs: 30
+    from_best: {stage: A_screen, top: 2, keep: [lr, residual]}
+    fixed: {batch_size: 64}
+    variants:
+      - {n_layers: 6, weight_decay: 0.01, dropout: 0.1}
+      - {n_layers: 6, weight_decay: 0.1, dropout: 0.1}
+      - {n_layers: 4, weight_decay: 0.01, dropout: 0.1}
+
+  # ── B'. Confirmation par seeds (04) ──────────────────────────────
+  # Une seule graine par run et 8 épisodes de val : deux configs proches
+  # peuvent s'inverser par hasard. La meilleure de B est relancée avec 2
+  # autres seeds (initialisation + ordre des batches ; le split de val ne
+  # change pas). La campagne compare ensuite la dispersion entre seeds à
+  # l'écart avec la 2ᵉ config de B : si l'écart est plus petit, les deux
+  # configs sont équivalentes.
+  - name: B_seeds
+    script: "04"
+    epochs: 30
+    from_best: {stage: B_regul, top: 1, keep: [lr, residual, n_layers, weight_decay, dropout]}
+    fixed: {batch_size: 64}
+    grid: {seed: [1, 2]}
+
+  # ── C. LoRA (05) — seulement si real_data est posé ──────────────
+  # Sur le meilleur predictor de A+B. rank : capacité de l'adaptation
+  # (q/k/v/o seulement) ; alpha = 2 × rank pour garder l'échelle alpha/rank
+  # constante (sinon changer le rang change aussi le lr effectif) ;
+  # lr : 5e-4 (défaut) et 1e-4.
+  - name: C_lora
+    script: "05"
+    epochs: 20
+    requires: real_data
+    fixed: {batch_size: 32}
+    grid: {lr: [1.0e-4, 5.0e-4]}
+    variants:
+      - {lora_rank: 4, lora_alpha: 8}
+      - {lora_rank: 8, lora_alpha: 16}
+      - {lora_rank: 16, lora_alpha: 32}
+
+  # ── D. Réglage du CEM (08, hors ligne, épisodes de val) ─────────
+  # Sur le meilleur checkpoint final. horizon = écart au goal (frames) :
+  # 04 est entraîné en one-step, l'erreur se cumule sur le rollout → trouver
+  # l'horizon max exploitable. n_samples / n_iter : qualité vs latence.
+  # cost : cosine seulement (mse classait les candidats dans le même ordre
+  # sur nos tests ; le tester doublerait l'étape pour un gain modeste).
+  - name: D_cem
+    script: "08"
+    fixed: {n_starts: 64, rollout_chunk: 500}
+    grid:
+      horizon: [5, 10, 20]
+      n_samples: [300, 1000]
+      n_iter: [3, 5]
+      cost: [cosine]

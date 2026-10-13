@@ -38,8 +38,8 @@ import torch
 from src.encoders import DINOv3Config, DINOv3Encoder
 from src.fusion import make_fusion
 from src.predictor import WorldModelPredictor, PredictorConfig
-from src.lora import LoRAConfig, inject_lora
 from src.planner import CEMPlanner, CEMConfig, MPCController
+from src.checkpoint import load_world_model
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.device import peak_vram_gb, reset_peak_vram
 
@@ -47,46 +47,6 @@ from src.device import peak_vram_gb, reset_peak_vram
 def resolve(p) -> Path:
     p = Path(p)
     return p if p.is_absolute() else ROOT / p
-
-
-def load_predictor_with_lora(ckpt_path: Path,
-                              device: str) -> tuple:
-    """
-    Charge un predictor avec ou sans LoRA depuis un checkpoint.
-
-    Returns:
-        predictor (avec LoRA si applicable), fusion, metadata dict
-    """
-    ckpt = torch.load(ckpt_path, weights_only=False, map_location="cpu")
-
-    # Reconstituer le predictor
-    pred_cfg = PredictorConfig(**ckpt["predictor_config"])
-    predictor = WorldModelPredictor(pred_cfg)
-
-    # Si LoRA est dedans, on injecte d'abord (la state_dict aura les clés A et B)
-    has_lora = "lora_config" in ckpt
-    if has_lora:
-        lora_cfg = LoRAConfig(**ckpt["lora_config"])
-        predictor = inject_lora(predictor, lora_cfg, verbose=False)
-
-    predictor.load_state_dict(ckpt["predictor_state_dict"])
-
-    # Fusion
-    fusion = make_fusion(ckpt["fusion_name"], dim=ckpt["embed_dim"])
-    fusion.load_state_dict(ckpt["fusion_state_dict"])
-
-    predictor.to(device).eval()
-    fusion.to(device).eval()
-
-    metadata = {
-        "fusion_name":     ckpt["fusion_name"],
-        "embed_dim":       ckpt["embed_dim"],
-        "action_dim":      ckpt["action_dim"],
-        "has_lora":        has_lora,
-        "epoch":           ckpt.get("epoch", "?"),
-        "val_loss":        ckpt.get("val_loss", "?"),
-    }
-    return predictor, fusion, metadata
 
 
 def encode_image_pair(encoder, fusion, wrist_img, front_img, device):
@@ -111,14 +71,20 @@ def encode_image_pair(encoder, fusion, wrist_img, front_img, device):
     return z_fused.squeeze(0)
 
 
-def make_planner(predictor, action_dim, args, hw):
+def make_planner(predictor, action_dim, args, hw, action_stats=None):
+    # Le CEM échantillonne dans l'espace d'actions du TRAINING (normalisé) :
+    # N(0, 1) = distribution du dataset, bornes = min/max du dataset.
+    low, high = (action_stats.normalized_bounds() if action_stats is not None
+                 else (-1.0, 1.0))
     cem_cfg = CEMConfig(
         horizon=args.horizon,
         n_samples=args.n_samples,
         n_elites=args.n_elites,
         n_iterations=args.n_iter,
         action_dim=action_dim,
-        cost_type="cosine",
+        action_low=low,
+        action_high=high,
+        cost_type=getattr(args, "cost", "cosine"),
         precision=args.precision or hw["precision"],
         rollout_chunk=args.rollout_chunk,
     )
@@ -212,6 +178,8 @@ def main():
     parser.add_argument("--n-samples",   type=int, default=200)
     parser.add_argument("--n-elites",    type=int, default=20)
     parser.add_argument("--n-iter",      type=int, default=3)
+    parser.add_argument("--cost", default="cosine", choices=["cosine", "mse"],
+                        help="Coût du CEM (réglé par la campagne : best.json)")
     parser.add_argument("--rollout-chunk", type=int, default=0,
                         help="Candidats déroulés par passe (0 = tous). "
                              "Ex: --n-samples 4000 --rollout-chunk 1000")
@@ -257,7 +225,7 @@ def main():
         run_random_demo(encoder, args, device, cfg, hw)
         return
 
-    predictor, fusion, meta = load_predictor_with_lora(ckpt_path, device)
+    predictor, fusion, meta = load_world_model(ckpt_path, device)
     if encoder.embed_dim != meta["embed_dim"]:
         sys.exit(f"[ERREUR] embed_dim encodeur ({encoder.embed_dim}) != "
                  f"checkpoint ({meta['embed_dim']}) — mauvaise size/famille ?")
@@ -273,17 +241,22 @@ def main():
 
     # === CEM Planner ===
     print("\n--- Planning avec CEM ---")
-    planner = make_planner(predictor, meta["action_dim"], args, hw)
+    stats = meta["action_stats"]
+    if stats is None:
+        sys.exit("[ERREUR] Checkpoint sans action_stats : réentraîner 04 avec le "
+                 "code actuel (le CEM doit connaître l'espace d'actions).")
+    planner = make_planner(predictor, meta["action_dim"], args, hw, stats)
     actions, diag = timed_plan(planner, z_current, z_goal)
+    actions = stats.denormalize(actions.float().cpu())     # → degrés SO-101
     print(f"Actions shape    : {tuple(actions.shape)}")
     print(f"Best cost final  : {diag['best_cost'][-1]:.5f}")
     print(f"Cost evolution   : {[round(c, 5) for c in diag['best_cost']]}")
 
     # === Comparaison avec l'action vraie au temps t0 ===
-    print(f"\nAction prédite par CEM (step 0) : {actions[0].cpu().numpy().round(3)}")
-    print(f"Action vraie dans le dataset    : {action_taken.numpy().round(3)}")
+    print(f"\nAction prédite par CEM (step 0) : {actions[0].numpy().round(1)}  (degrés)")
+    print(f"Action vraie dans le dataset    : {action_taken.numpy().round(1)}")
     print(f"Différence absolue              : "
-          f"{(actions[0].cpu() - action_taken).abs().numpy().round(3)}")
+          f"{(actions[0] - action_taken).abs().numpy().round(1)}")
     print("\nNote : Si predictor pas encore entraîné, la différence sera élevée.")
 
 

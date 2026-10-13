@@ -30,6 +30,8 @@ dans l'espace latent.
 │   ├── lora.py                Injection LoRA + merge
 │   ├── losses.py              MSE multi-step + cosine + DANN backup
 │   ├── planner.py             CEM planner (autocast bf16, rollouts par chunks) + MPC controller
+│   ├── latents.py             Format des latents (frames uniques, bf16), split, normalisation des actions
+│   ├── checkpoint.py          Sauvegarde atomique + rechargement predictor/fusion/LoRA
 │   └── tracking.py            Suivi W&B (optionnel)
 ├── scripts/
 │   ├── 00_check_gpu.py              Vérifie runtime Blackwell et kernels SDPA/backward/AdamW
@@ -38,8 +40,10 @@ dans l'espace latent.
 │   ├── 03_compare_fusion.py         Compare les fusions (M1) — latents en VRAM
 │   ├── 04_train_predictor.py        Train predictor (M4) — bf16, fused AdamW, --compile
 │   ├── 05_train_lora.py             Train LoRA sur démos réelles (M4)
-│   └── 06_inference_demo.py         Démo end-to-end avec CEM planner (M5)
-│   └── 07_benchmark.py              Mini-trains chronométrés → estimation du temps d'un run complet
+│   ├── 06_inference_demo.py         Démo end-to-end avec CEM planner (M5)
+│   ├── 07_benchmark.py              Mini-trains chronométrés → estimation du temps d'un run complet
+│   ├── 08_eval_planner.py           Évaluation hors ligne du CEM sur les épisodes de validation
+│   └── campaign.py                  Campagne sans surveillance (sweeps 04, LoRA, CEM), reprise après coupure
 ├── results/                   Outputs (encoded data, checkpoints, plots, runs W&B)
 ├── tests/                     pytest : adaptation GPU (CPU-only + 4 tests GPU) + suivi W&B
 ├── DEPLOYMENT.md              Guide machine RTX 5090 (install, run_local.sh, réglages, dépannage)

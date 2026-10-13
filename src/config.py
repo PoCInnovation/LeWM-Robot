@@ -22,12 +22,22 @@ import yaml
 
 
 def load_config(path: str | Path) -> Dict[str, Any]:
-    """Charge une config YAML."""
+    """
+    Charge une config YAML.
+
+    Une clé `base: autre.yaml` (chemin relatif au fichier) charge d'abord
+    cette config puis applique les valeurs du fichier par-dessus — une config
+    machine ne liste que ce qui change (ex. configs/rtx4090.yaml).
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config introuvable : {path}")
     with open(path) as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f) or {}
+    base = cfg.pop("base", None)
+    if base:
+        cfg = merge_configs(load_config(path.parent / base), cfg)
+    return cfg
 
 
 def merge_configs(base: Dict, override: Dict) -> Dict:
@@ -90,6 +100,8 @@ def hardware_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
                                    "fp16" / "fp32"
         data_device     : str    — "auto" / "cuda" / "cpu" : où héberger les
                                    latents pré-encodés pendant le training
+        vram_reserve_gb : float  — VRAM laissée au training quand les latents
+                                   sont hébergés en VRAM (défaut 5)
         num_workers     : int|"auto" — workers DataLoader (encodage)
         compile         : bool   — torch.compile du predictor (défaut False)
         power_limit_percent : float — pourcentage du TGP NVIDIA (défaut 80)
@@ -101,6 +113,7 @@ def hardware_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "cudnn_benchmark": True,
         "precision": "auto",
         "data_device": "auto",
+        "vram_reserve_gb": 5.0,
         "num_workers": "auto",
         "compile": False,
         "power_limit_percent": 80,

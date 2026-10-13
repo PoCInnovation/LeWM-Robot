@@ -36,8 +36,12 @@ class CEMConfig:
     n_elites: int = 20                  # top-K à garder
     n_iterations: int = 3               # raffinements
     action_dim: int = 6                 # 6 servos SO-101
-    action_low: float = -1.0            # bornes des actions (normalisées)
-    action_high: float = 1.0
+    # Bornes en espace NORMALISÉ (celui du training, cf. ActionStats) :
+    # scalaires ou tenseurs (action_dim,) — ActionStats.normalized_bounds().
+    # Les actions renvoyées sont normalisées : ActionStats.denormalize avant
+    # de les afficher ou de les envoyer au robot.
+    action_low: "float | torch.Tensor" = -1.0
+    action_high: "float | torch.Tensor" = 1.0
     initial_std: float = 1.0
     cost_type: str = "cosine"           # "cosine" / "mse"
     elite_momentum: float = 0.0         # 0 = full refit, >0 = lisser entre iter
@@ -103,6 +107,10 @@ class CEMPlanner:
         N, D = z_current.shape
         z_current = z_current.to(device)
         z_goal = z_goal.to(device)
+        low = torch.as_tensor(cfg.action_low, dtype=torch.float32,
+                              device=device).expand(cfg.action_dim)
+        high = torch.as_tensor(cfg.action_high, dtype=torch.float32,
+                               device=device).expand(cfg.action_dim)
 
         # Init distribution
         mean = torch.zeros(cfg.horizon, cfg.action_dim, device=device)
@@ -115,7 +123,7 @@ class CEMPlanner:
             actions = (mean.unsqueeze(0) + std.unsqueeze(0)
                        * torch.randn(cfg.n_samples, cfg.horizon,
                                       cfg.action_dim, device=device))
-            actions = actions.clamp(cfg.action_low, cfg.action_high)
+            actions = torch.clamp(actions, min=low, max=high)
 
             # 2. Rollout en batch (par chunks si demandé) + 3. coût
             costs = self._rollout_costs(z_current, z_goal, actions)  # (n_samples,)

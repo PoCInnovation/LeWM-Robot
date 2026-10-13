@@ -17,7 +17,8 @@
 # Variables optionnelles :
 #   DATASET_ID     dataset HF ou chemin local   (défaut: dataset.hf_id de la config)
 #   REAL_DATASET   démos réelles (HF id/chemin) → active l'étape LoRA (défaut: aucune)
-#   PY_CONFIG      config YAML                  (défaut: configs/default.yaml)
+#   PY_CONFIG      config YAML                  (défaut: configs/default.yaml ;
+#                  RTX 4090 louée : configs/rtx4090.yaml)
 #   FUSION         forcer une fusion            (défaut: gagnante de l'étape 3)
 #   TRAIN_ARGS     args de 04  (défaut: --n-epochs 30 --batch-size 64)
 #   LORA_ARGS      args de 05  (défaut: --lora-rank 8 --n-epochs 20 --batch-size 32)
@@ -41,7 +42,8 @@ mkdir -p "$LOG_DIR"
 STAMP=$(date +%Y%m%d_%H%M%S)
 
 DATASET_ID="${DATASET_ID:-$("$PYTHON" - "$PY_CONFIG" <<'EOF'
-import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["dataset"]["hf_id"])
+import sys; sys.path.insert(0, ".")
+from src.config import load_config; print(load_config(sys.argv[1])["dataset"]["hf_id"])
 EOF
 )}"
 
@@ -98,8 +100,9 @@ if [ "${SKIP_FUSION:-0}" != "1" ]; then
         --encoded-data "$ENCODED" $FUSION_EPOCHS
     if [ -z "${FUSION:-}" ]; then
         FUSION=$("$PYTHON" - "$PY_CONFIG" <<'EOF'
-import json, sys, yaml
-cfg = yaml.safe_load(open(sys.argv[1]))
+import json, sys; sys.path.insert(0, ".")
+from src.config import load_config
+cfg = load_config(sys.argv[1])
 r = json.load(open(cfg["paths"].get("fusion_results", "results/fusion_comparison.json")))
 print(min(r, key=lambda k: r[k]["best_val_mae"]))
 EOF

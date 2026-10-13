@@ -33,6 +33,11 @@ class PredictorConfig:
     dropout: float = 0.1
     context_length: Optional[int] = None  # si None, calcul auto
     n_action_tokens: int = 1            # nombre de tokens pour encoder l'action
+    # Sortie résiduelle : z_t+1 = z_t + head(transformer), head initialisée à
+    # zéro → le modèle vaut exactement « rien ne bouge » à l'init et n'apprend
+    # que le changement. Opt-in (04 --residual) : la campagne compare les deux
+    # sur les vraies données.
+    residual: bool = False
 
 
 class ActionEmbedding(nn.Module):
@@ -172,9 +177,14 @@ class WorldModelPredictor(nn.Module):
         ])
 
         self.norm = nn.LayerNorm(config.embed_dim)
+        self.out_head = (nn.Linear(config.embed_dim, config.embed_dim)
+                         if config.residual else None)
 
         # Init weights
         self.apply(self._init_weights)
+        if self.out_head is not None:
+            nn.init.zeros_(self.out_head.weight)
+            nn.init.zeros_(self.out_head.bias)
 
     def _init_weights(self, module: nn.Module):
         if isinstance(module, nn.Linear):
@@ -217,7 +227,10 @@ class WorldModelPredictor(nn.Module):
         x = self.norm(x)
 
         # On retire les tokens d'action et on retourne uniquement les patches prédits
-        return x[:, n_act:]  # (B, N, D)
+        out = x[:, n_act:]  # (B, N, D)
+        if self.out_head is not None:
+            return z_t + self.out_head(out)
+        return out
 
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)

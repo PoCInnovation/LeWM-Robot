@@ -27,9 +27,10 @@ entraînements complets. Ceux-ci restent accessibles avec `make run`.
 - Driver NVIDIA R570 ou plus récent compatible avec la 5090 et CUDA 12.8.
   Sous WSL2, installer le driver côté Windows. Vérifier `nvidia-smi`.
 - `ffmpeg` pour les vidéos ; accès Hugging Face approuvé pour DINOv3.
-- RAM et disque adaptés au dataset : les quatre tenseurs fp32 occupent environ
-  1,2 Go pour 1 000 paires DINOv3-small. L’encodage accumule les latents en RAM
-  puis les concatène : prévoir aussi la mémoire temporaire.
+- RAM et disque adaptés au dataset : en format v2 (frames uniques, bf16, cf.
+  `src/latents.py`), le dataset complet (17 478 paires + 1 passe augmentée)
+  occupe ~16 Go sur disque et en VRAM. L’encodage écrit dans des tables
+  préallouées en VRAM quand elles tiennent ; ailleurs, le .pt est lu en mmap.
 
 ```bash
 make install
@@ -109,7 +110,8 @@ pas la qualité du modèle ni la réussite d’une tâche robotique.
 | `hardware.gpu_index` | `0` | GPU ciblé par PyTorch et `nvidia-smi` |
 | `hardware.precision` | `auto` | bf16 sur GPU compatible, fp32 sur CPU |
 | `hardware.tf32` | `true` | TF32 pour les opérations fp32 |
-| `hardware.data_device` | `auto` | VRAM si les latents tiennent dans 45 % de la mémoire libre, sinon RAM |
+| `hardware.data_device` | `auto` | VRAM si latents + `vram_reserve_gb` tiennent dans la mémoire libre, sinon RAM |
+| `hardware.vram_reserve_gb` | `5` | VRAM laissée au training à côté des latents (04 en batch 64 : ~4 Go) |
 | `hardware.num_workers` | `auto` | min(8, cœurs CPU − 2), à ajuster selon le décodage |
 | `hardware.compile` | `false` | opt-in ; première compilation coûteuse, gain à mesurer |
 | Predictor `--batch-size` | `64` | augmenter uniquement après benchmark du modèle choisi |
@@ -120,6 +122,72 @@ Les 32 Go ne garantissent pas qu’un dataset entier ou un batch de 256 tienne :
 la taille de l’encodeur, la fusion et le nombre de couches changent le besoin.
 La fusion ne calcule plus de matrices de poids d’attention inutilisées, ce qui
 permet à PyTorch d’utiliser SDPA. Le choix du kernel reste géré par PyTorch.
+
+## RTX 4090 louée (24 Go VRAM, 32 Go RAM) — run final
+
+`configs/rtx4090.yaml` hérite de `default.yaml` et ne change que le matériel :
+plafond électrique demandé mais non bloquant (un conteneur loué refuse
+souvent `nvidia-smi -pl`), réserve VRAM de 5 Go.
+
+```bash
+export HF_TOKEN=hf_...           # accès DINOv3 + dataset
+export WANDB_API_KEY=...         # optionnel : suivi W&B (cf. WANDB.md)
+SMOKE=1 PY_CONFIG=configs/rtx4090.yaml bash run_local.sh   # ~5 min, à faire d’abord
+PY_CONFIG=configs/rtx4090.yaml bash run_local.sh
+```
+
+Budget mémoire attendu sur le dataset complet :
+
+| Étape | VRAM | RAM |
+|---|---|---|
+| 02 encodage | ~16 Go de tables + ~2 Go d’encodeur | workers + file d’images uint8 (~4 Go), pic ~8 Go à la sauvegarde |
+| 03 / 04 / 05 | ~16 Go de latents + ~4 Go de training | faible : .pt lu en mmap, copié tenseur par tenseur vers le GPU |
+
+À surveiller dans W&B (ou les logs de 04/05) : `val/ratio_vs_identity`,
+la val loss divisée par celle de la baseline « rien ne bouge »
+(z_t+1 = z_t). Il doit passer nettement sous 1 ; sinon le predictor n’a pas
+appris la dynamique, quelle que soit la valeur absolue de la loss. La
+validation est faite sur 8 épisodes entiers jamais vus (split par épisode).
+
+Si `[Device] Latents (...) > VRAM libre` s’affiche, les latents restent en
+RAM (mmap) : le run continue, plus lentement. Si torchcodec ne trouve pas
+ses libs FFmpeg, le décodage bascule automatiquement sur pyav (plus lent) ;
+`apt install ffmpeg` le rend inutile.
+
+## Campagne d'entraînement (sans surveillance)
+
+`scripts/campaign.py` enchaîne la campagne décrite dans
+`configs/campaign_rtx4090.yaml` : 02 si les latents manquent, 03 une fois
+(fusion + poids), criblage de 04 (lr × sortie standard/résiduelle),
+taille et régularisation des 2 meilleures configs, confirmation de la
+meilleure avec 2 autres seeds (`--seed`), LoRA si `real_data` est posé, puis
+réglage du CEM hors ligne sur les épisodes de validation
+(`scripts/08_eval_planner.py`).
+
+```bash
+export WANDB_API_KEY=...
+python scripts/campaign.py --dry-run      # liste des runs et epochs par taille de modèle
+nohup python scripts/campaign.py > logs/campaign.log 2>&1 &
+```
+
+- Au démarrage, la campagne vérifie la clé W&B (`WANDB_API_KEY` ou `wandb
+  login`) et s'arrête si elle manque ou est refusée : sans elle, chaque run
+  passerait en offline sans rien afficher en ligne. Elle affiche l'adresse du
+  projet ; les runs sont groupés par étape (`c1-A_screen`, `c1-B_regul`...).
+  `WANDB_MODE=offline` pour lancer volontairement sans suivi en ligne.
+- Relancer la même commande après une coupure : runs terminés sautés, run
+  04 en cours repris à son dernier epoch (`<run>/predictor.last.pt`), même
+  run W&B (id déterministe). `name:` dans le fichier = nouvelle campagne.
+- Sorties : `results/campaign/<name>/` — un dossier par run (log, checkpoint,
+  `*.done.json`), `best_predictor.pt` (val loss la plus basse parmi les runs
+  à ratio vs identité < 1), `best.json` (meilleurs predictor / LoRA / CEM,
+  dispersion entre seeds), `state.json`. La ligne `[Campagne] écart avec la
+  2ᵉ config ... → classement fiable / équivalentes` dit si le choix de la
+  meilleure config dépasse le bruit entre seeds.
+- Durée : Σ (epochs × s/epoch) + ~1 min de chargement par run. Le s/epoch
+  se lit sur la ligne de fin d'epoch de 04 (`[NNs, ... éch/s, VRAM pic ...]`,
+  ou `perf/epoch_seconds` dans W&B) ; la campagne l'affiche et projette le
+  temps restant de l'étape avant chaque run.
 
 ## Pipeline
 

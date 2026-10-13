@@ -38,7 +38,8 @@ from src.fusion import make_fusion
 from src.probes import ActionProbe
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.data import split_train_val, describe_split
-from src.device import (resolve_amp_dtype, place_tensors, make_adamw,
+from src.latents import LatentPairs, load_encoded, train_action_stats
+from src.device import (resolve_amp_dtype, make_adamw,
                         autocast_ctx, peak_vram_gb, reset_peak_vram)
 from src.tracking import Stopwatch, add_wandb_args, tracker_from_args
 
@@ -102,19 +103,16 @@ def main():
     print(f"[Precision] autocast: {amp_dtype or 'off (fp32)'}")
 
     # === Charger les patches pré-encodés ===
-    data = torch.load(encoded_path, weights_only=False, map_location="cpu")
+    data = load_encoded(encoded_path)
     dim = data["embed_dim"]
-    actions = data["action"]       # (N, action_dim)
-    action_dim = actions.shape[-1]
-    tensors, data_device = place_tensors(
-        {"z_wrist": data["z_wrist_t"], "z_global": data["z_global_t"],
-         "action": actions},
-        args.data_device or hw["data_device"], device)
-    z_wrist, z_global, actions = tensors["z_wrist"], tensors["z_global"], tensors["action"]
+    latents = LatentPairs(data, args.data_device or hw["data_device"], device,
+                          reserve_gb=float(hw["vram_reserve_gb"]))
+    data_device = latents.device
+    action_dim = latents.action_dim
 
     print(f"\nDonnées chargées :")
-    print(f"  N paires       : {z_wrist.shape[0]}")
-    print(f"  Num patches    : {z_wrist.shape[1]}")
+    print(f"  N paires       : {len(latents)}")
+    print(f"  Num patches    : {latents.num_patches}")
     print(f"  Embed dim      : {dim}")
     print(f"  Action dim     : {action_dim}")
 
@@ -123,6 +121,12 @@ def main():
                                          val_fraction=float(cfg.get("dataset", {}).get("val_fraction", 0.2)))
 
     print(f"\nSplit : {describe_split(data, train_idx, val_idx)}")
+
+    # Actions en z-score (stats du train) : en degrés, les articulations à
+    # grande amplitude (écart-type ~27°) écraseraient les autres dans la MAE.
+    action_stats = train_action_stats(data, train_idx)
+    latents.normalize_actions(action_stats)
+    print("MAE ci-dessous en espace normalisé (1.0 = un écart-type de l'articulation)")
 
     # === Boucle sur chaque stratégie ===
     results = {}
@@ -170,8 +174,7 @@ def main():
         result = train_joint(
             fusion=fusion,
             probe=probe,
-            z_wrist=z_wrist, z_global=z_global, actions=actions,
-            train_idx=train_idx, val_idx=val_idx,
+            latents=latents, train_idx=train_idx, val_idx=val_idx,
             n_epochs=n_epochs, lr=lr, weight_decay=weight_decay,
             batch_size=batch_size, device=device, amp_dtype=amp_dtype,
             on_epoch=lambda metrics: run.log(metrics, step=metrics["epoch"]),
@@ -187,6 +190,15 @@ def main():
             "peak_vram_gb": peak_vram_gb() if device == "cuda" else None,
         })
         run.finish()
+
+        # Poids de la fusion entraînée (avec le probe d'action) : 04 repart de
+        # là et la garde gelée (cf. 04 --fusion-ckpt).
+        weights_dir = resolve(cfg["paths"].get("fusion_weights", "results/fusion_weights"))
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        torch.save({"fusion_name": strategy_name, "embed_dim": dim,
+                    "fusion_state_dict": fusion.state_dict(),
+                    "best_val_mae": result["best_val_loss"]},
+                   weights_dir / f"{strategy_name}.pt")
 
         results[strategy_name] = {
             "params":           n_fusion_params,
@@ -223,7 +235,7 @@ def main():
           f"--encoded-data {encoded_path} --fusion {winner}")
 
 
-def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
+def train_joint(fusion, probe, latents, train_idx, val_idx,
                 n_epochs=30, lr=1e-3, weight_decay=1e-4, batch_size=32,
                 device="cpu", amp_dtype=None, on_epoch=None):
     """
@@ -240,11 +252,6 @@ def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
     params = list(fusion.parameters()) + list(probe.parameters())
     optimizer = make_adamw(params, lr, weight_decay, device)
 
-    def fetch(idx):
-        return (z_wrist[idx].to(device, non_blocking=True),
-                z_global[idx].to(device, non_blocking=True),
-                actions[idx].to(device, non_blocking=True))
-
     n = train_idx.shape[0]
     history = []
     best_val = float("inf")
@@ -257,7 +264,7 @@ def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
         perm = train_idx[torch.randperm(n)]
         losses = []
         for i in range(0, n, batch_size):
-            zw, zg, act = fetch(perm[i:i + batch_size])
+            zw, zg, act = latents.fetch_t(perm[i:i + batch_size])
             with autocast_ctx(device, amp_dtype):
                 z_fused = fusion(zw, zg)
                 pred = probe(z_fused)
@@ -274,7 +281,7 @@ def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
         val_losses = []
         with torch.no_grad():
             for i in range(0, val_idx.shape[0], batch_size):
-                zw, zg, act = fetch(val_idx[i:i + batch_size])
+                zw, zg, act = latents.fetch_t(val_idx[i:i + batch_size])
                 with autocast_ctx(device, amp_dtype):
                     pred_val = probe(fusion(zw, zg))
                 val_losses.append(
@@ -294,7 +301,8 @@ def train_joint(fusion, probe, z_wrist, z_global, actions, train_idx, val_idx,
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(f"  epoch {epoch+1:3d}/{n_epochs}  "
-                  f"train MAE={train_mae:.5f}  val MAE={val_mae:.5f}")
+                  f"train MAE={train_mae:.5f}  val MAE={val_mae:.5f}  "
+                  f"[{epoch_clock.elapsed:.1f}s/epoch]")
 
     return {
         "final_train_loss": history[-1][0],

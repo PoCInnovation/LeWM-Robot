@@ -23,6 +23,7 @@ dataset:
   proprio_key: "observation.state"
   delta_timesteps: 1
   cache_dir: null                       # null = défaut HF
+  video_backend: null                   # null = torchcodec si ses libs FFmpeg chargent, sinon pyav
   val_fraction: 0.2
 
 # Matériel — tout est "auto" : rien à toucher sur une RTX 5090 (32 GB).
@@ -37,6 +38,7 @@ hardware:
   cudnn_benchmark: true                 # autotune des kernels (shapes fixes)
   precision: "auto"                     # autocast : auto (bf16 sur GPU) / bf16 / fp16 / fp32
   data_device: "auto"                   # latents pré-encodés : auto (VRAM si ça tient) / cuda / cpu
+  vram_reserve_gb: 5                    # VRAM laissée au training quand les latents sont en VRAM
   num_workers: "auto"                   # DataLoader d'encodage : auto (= cœurs - 2, max 8)
   compile: false                        # torch.compile du predictor (04/05) — opt-in
 
@@ -95,3 +97,4 @@ paths:
   encoded_data: "results/encoded/encoded_data.pt"
   fusion_results: "results/fusion_comparison.json"
   fusion_plot: "results/fusion_comparison.png"
+  fusion_weights: "results/fusion_weights"   # poids des fusions entraînées par 03 (lus par 04)

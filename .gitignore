@@ -34,6 +34,8 @@ dist/
 # Results (lourds, peuvent être regénérés)
 results/encoded/
 results/checkpoints/
+results/fusion_weights/
+results/campaign/
 results/wandb/
 # ! enlever la ligne suivante si tu veux versionner les plots
 # (un commentaire en fin de ligne ferait partie du motif, d'ou la ligne separee)
