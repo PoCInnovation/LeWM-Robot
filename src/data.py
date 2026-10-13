@@ -136,10 +136,11 @@ class LeRobotPairsDataset(Dataset):
 
         # Récupérer episode_index pour TOUTES les frames d'un coup (sans décoder les vidéos)
         # hf_dataset est le dataset HF brut sans les images
-        # (une seule lecture de la colonne : l'accès élément par élément à une
-        # colonne datasets>=4 coûte des minutes sur ~900k frames)
+        # Lecture de la colonne d'un bloc ([:] → liste) : avec datasets>=4, la
+        # colonne est un objet Column, et la parcourir élément par élément (ce que
+        # fait torch.as_tensor) prend des dizaines de minutes sur ~900k frames.
         ep_indices = torch.as_tensor(
-            self._dataset.hf_dataset.with_format(None)["episode_index"]).flatten()
+            self._dataset.hf_dataset.with_format(None)["episode_index"][:]).flatten()
 
         # Paire valide ssi frame_i et frame_{i+delta} sont dans le même épisode
         starts = torch.nonzero(ep_indices[:-delta] == ep_indices[delta:]).flatten()
