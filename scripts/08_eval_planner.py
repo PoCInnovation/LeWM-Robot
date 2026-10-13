@@ -39,7 +39,7 @@ import torch
 from src.checkpoint import load_world_model
 from src.config import load_config, set_seed, setup_hardware
 from src.data import split_train_val
-from src.latents import LatentPairs, load_encoded
+from src.latents import LatentPairs, frameskip_pairs, load_encoded
 from src.planner import CEMConfig, CEMPlanner
 from src.tracking import add_wandb_args, tracker_from_args
 
@@ -49,10 +49,11 @@ def resolve(p) -> Path:
     return p if p.is_absolute() else ROOT / p
 
 
-def plan_starts(data: dict, val_idx: torch.Tensor, horizon: int):
+def plan_starts(data: dict, val_idx: torch.Tensor, horizon: int, stride: int = 1):
     """
-    Points de départ valides : les paires t, t+1, ..., t+H-1 existent toutes
-    dans le même épisode de validation (actions de la démo + goal = frame t+H).
+    Points de départ valides : les paires t, t+s, ..., t+(H-1)·s existent toutes
+    dans le même épisode de validation (actions de la démo + goal = frame
+    t+H·s), s = frameskip du predictor.
 
     Returns:
         liste de listes de H lignes de paires (dans les latents)
@@ -64,7 +65,7 @@ def plan_starts(data: dict, val_idx: torch.Tensor, horizon: int):
         row_of.setdefault((int(episode[r]), int(frame[r])), r)
     starts = []
     for (ep, f), r in sorted(row_of.items()):
-        rows = [row_of.get((ep, f + k)) for k in range(horizon)]
+        rows = [row_of.get((ep, f + k * stride)) for k in range(horizon)]
         if all(x is not None for x in rows):
             starts.append(rows)
     return starts
@@ -78,7 +79,7 @@ def main():
     parser.add_argument("--predictor-ckpt",
                         default="results/checkpoints/predictor_simu.pt")
     parser.add_argument("--horizon", type=int, default=10,
-                        help="Pas planifiés ; le goal est la frame t+horizon")
+                        help="Pas planifiés ; le goal est la frame t+horizon×frameskip")
     parser.add_argument("--n-samples", type=int, default=1000)
     parser.add_argument("--n-elites", type=int, default=None,
                         help="Défaut : 10 %% de --n-samples")
@@ -104,14 +105,16 @@ def main():
     if stats is None:
         sys.exit("[ERREUR] Checkpoint sans action_stats : réentraîner 04.")
 
-    data = load_encoded(resolve(args.encoded_data or cfg["paths"]["encoded_data"]))
+    frameskip = meta["frameskip"]
+    data = frameskip_pairs(
+        load_encoded(resolve(args.encoded_data or cfg["paths"]["encoded_data"])), frameskip)
     _, val_idx = split_train_val(data, seed=cfg["seed"],
                                  val_fraction=float(cfg.get("dataset", {}).get("val_fraction", 0.2)))
     latents = LatentPairs(data, "auto", device, reserve_gb=float(hw["vram_reserve_gb"]),
                           verbose=False)
     latents.normalize_actions(stats)
 
-    starts = plan_starts(data, val_idx, args.horizon)
+    starts = plan_starts(data, val_idx, args.horizon, stride=frameskip)
     if not starts:
         sys.exit(f"[ERREUR] Aucun point de départ avec {args.horizon} pas dans les épisodes de val.")
     g = torch.Generator().manual_seed(cfg["seed"])
@@ -160,7 +163,7 @@ def main():
 
     result = {
         "name": name,
-        "horizon": args.horizon, "n_samples": args.n_samples,
+        "horizon": args.horizon, "frameskip": frameskip, "n_samples": args.n_samples,
         "n_elites": planner.config.n_elites, "n_iter": args.n_iter,
         "cost": args.cost, "initial_std": args.initial_std,
         "n_starts": len(starts),

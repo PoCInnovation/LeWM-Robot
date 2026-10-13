@@ -147,3 +147,27 @@ def test_delta_action_mode_normalizes_commanded_displacement():
     lat.normalize_actions(stats)
     # déplacement constant (1, 2) → égal à la moyenne → 0 après normalisation
     assert torch.allclose(lat.fetch(torch.arange(n))[-1], torch.zeros(n, 2))
+
+
+def test_frameskip_pairs_skip_k_frames_and_drop_augmented():
+    from src.latents import frameskip_pairs
+    # 2 épisodes : frames 0..5 (paires 0..4) et 10..12 (paires 10..11), + 1 ligne augmentée
+    frames = [0, 1, 2, 3, 4, 10, 11, 0]
+    n = len(frames)
+    data = {"z_wrist": torch.zeros(20, 2, 3), "z_global": torch.zeros(20, 2, 3),
+            "idx_t": torch.tensor([0, 1, 2, 3, 4, 10, 11, 15]),
+            "idx_t1": torch.tensor([1, 2, 3, 4, 5, 11, 12, 16]),
+            "action": torch.arange(n, dtype=torch.float)[:, None].repeat(1, 6),
+            "proprio": -torch.arange(n, dtype=torch.float)[:, None].repeat(1, 6),
+            "episode_idx": torch.tensor([0] * 5 + [1] * 2 + [0]),
+            "frame_idx": torch.tensor(frames),
+            "is_augmented": torch.tensor([0] * 7 + [1]), "embed_dim": 3, "num_patches": 2}
+    out = frameskip_pairs(data, 3)
+    # épisode 0 : t=0,1,2 (t+3 ≤ 5) ; épisode 1 : aucune fenêtre de 3 paires
+    assert out["frame_idx"].tolist() == [0, 1, 2]
+    assert out["idx_t"].tolist() == [0, 1, 2] and out["idx_t1"].tolist() == [3, 4, 5]
+    assert out["action"][:, 0].tolist() == [2, 3, 4]          # cible de la paire t+k-1
+    assert out["proprio"][:, 0].tolist() == [0, -1, -2]        # état en t
+    assert out["frameskip"] == 3 and frameskip_pairs(data, 1) is data
+    lat = LatentPairs(out, "cpu", "cpu", verbose=False)
+    assert len(lat) == 3

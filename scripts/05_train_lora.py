@@ -37,7 +37,8 @@ from src.fusion import make_fusion
 from src.lora import LoRAConfig, inject_lora, get_lora_parameters
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.data import split_train_val, describe_split
-from src.latents import ActionStats, LatentPairs, load_encoded, train_action_stats
+from src.latents import (ActionStats, LatentPairs, frameskip_pairs, load_encoded,
+                         train_action_stats)
 from src.device import (resolve_amp_dtype, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
                         peak_vram_gb, reset_peak_vram)
@@ -130,7 +131,11 @@ def main():
         sys.exit(1)
 
     print(f"\nChargement des démos réelles : {real_path}")
-    real = load_encoded(real_path)
+    # même écart entre frames que le predictor de 04
+    frameskip = int(ckpt.get("frameskip", 1))
+    real = frameskip_pairs(load_encoded(real_path), frameskip)
+    if frameskip > 1:
+        print(f"  Frameskip {frameskip} (du checkpoint) : {len(real['action'])} paires")
     if real["embed_dim"] != ckpt["embed_dim"]:
         print(f"[ERREUR] embed_dim des données réelles ({real['embed_dim']}) != "
               f"checkpoint ({ckpt['embed_dim']}) — encodeurs différents ?")
@@ -306,6 +311,7 @@ def main():
                 "embed_dim":            ckpt["embed_dim"],
                 "action_dim":           ckpt["action_dim"],
                 "action_stats":         action_stats.to_dict(),
+                "frameskip":            frameskip,
                 "epoch":                epoch,
                 "val_loss":             val_loss,
                 "val_identity":         id_loss,

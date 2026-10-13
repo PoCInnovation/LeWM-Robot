@@ -95,3 +95,10 @@ def test_plan_starts_need_horizon_consecutive_val_pairs():
             "frame_idx": torch.tensor(frames)}
     starts = eval_planner.plan_starts(data, torch.arange(7), horizon=3)
     assert [[frames[r] for r in s] for s in starts] == [[0, 1, 2], [1, 2, 3], [2, 3, 4]]
+
+
+def test_plan_starts_stride_follows_frameskip():
+    frames = [0, 2, 4, 6, 1, 3]
+    data = {"episode_idx": torch.zeros(6, dtype=torch.long), "frame_idx": torch.tensor(frames)}
+    starts = eval_planner.plan_starts(data, torch.arange(6), horizon=3, stride=2)
+    assert [[frames[r] for r in s] for s in starts] == [[0, 2, 4], [2, 4, 6]]

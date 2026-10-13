@@ -56,6 +56,7 @@ def load_world_model(ckpt_path: Union[str, Path], device: Union[str, torch.devic
         "embed_dim":    ckpt["embed_dim"],
         "action_dim":   ckpt["action_dim"],
         "has_lora":     has_lora,
+        "frameskip":    int(ckpt.get("frameskip", 1)),
         "epoch":        ckpt.get("epoch", "?"),
         "val_loss":     ckpt.get("val_loss", "?"),
         "action_stats": (ActionStats.from_dict(ckpt["action_stats"])

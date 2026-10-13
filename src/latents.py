@@ -211,6 +211,63 @@ class ActionStats:
                 self.normalize(torch.tensor(self.high)))
 
 
+def frameskip_pairs(data: dict, k: int) -> dict:
+    """
+    Paires (t, t+k) construites depuis les frames déjà encodées (format v2).
+
+    À 30 fps, le bras bouge de ~0,2° entre deux frames : dans les latents,
+    ce mouvement se noie dans le bruit (compression vidéo) et le predictor
+    apprend à ignorer l'action. Sur k frames (k=5 ≈ 0,17 s, comme DINO-WM),
+    le mouvement devient visible.
+
+    Pour chaque frame propre t dont les paires t, t+1, ..., t+k-1 existent
+    dans le même épisode :
+        z_t      = frame t
+        z_{t+k}  = frame t+k (cible de la paire t+k-1)
+        action   = action de la paire t+k-1 (dernière cible commandée)
+        proprio  = état en t
+    → en mode "delta", l'action vaut le déplacement commandé sur la fenêtre.
+    Les lignes augmentées (images propres à une paire t → t+1) sont écartées.
+
+    Returns:
+        nouveau dict au format v2 (mêmes tables de frames, partagées)
+    """
+    if k <= 1:
+        return data
+    if "z_wrist" not in data:
+        raise ValueError("frameskip : format v2 (tables de frames) requis")
+    episode = torch.as_tensor(data["episode_idx"]).flatten()
+    frame = torch.as_tensor(data["frame_idx"]).flatten()
+    rows = torch.arange(len(episode))
+    is_aug = data.get("is_augmented")
+    if is_aug is not None:
+        rows = rows[~torch.as_tensor(is_aug).flatten().bool()]
+    row_of = {(int(episode[r]), int(frame[r])): int(r) for r in rows}
+    first, last = [], []
+    for (ep, f), r in row_of.items():
+        window = [row_of.get((ep, f + j)) for j in range(k)]
+        if all(w is not None for w in window):
+            first.append(r)
+            last.append(window[-1])
+    order = torch.argsort(torch.tensor(first))        # ordre d'origine (épisodes, frames)
+    first = torch.tensor(first)[order]
+    last = torch.tensor(last)[order]
+
+    out = {key: v for key, v in data.items()
+           if not (torch.is_tensor(v) and v.dim() > 0 and v.shape[0] == len(episode))}
+    out.update(z_wrist=data["z_wrist"], z_global=data["z_global"])
+    out["idx_t"] = torch.as_tensor(data["idx_t"])[first]
+    out["idx_t1"] = torch.as_tensor(data["idx_t1"])[last]
+    out["action"] = torch.as_tensor(data["action"])[last]
+    for key in ("proprio", "episode_idx", "frame_idx", "pair_id"):
+        if key in data:
+            out[key] = torch.as_tensor(data[key])[first]
+    out["is_augmented"] = torch.zeros(len(first), dtype=torch.long)
+    out["recipe_idx"] = torch.zeros(len(first), dtype=torch.long)
+    out["frameskip"] = k
+    return out
+
+
 ACTION_MODES = ("absolute", "delta")
 
 

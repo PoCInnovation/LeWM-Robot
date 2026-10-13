@@ -41,7 +41,7 @@ from src.predictor import WorldModelPredictor, PredictorConfig
 from src.fusion import make_fusion
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.data import split_train_val, describe_split
-from src.latents import LatentPairs, load_encoded, train_action_stats
+from src.latents import LatentPairs, frameskip_pairs, load_encoded, train_action_stats
 from src.checkpoint import atomic_save
 from src.device import (resolve_amp_dtype, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
@@ -93,6 +93,10 @@ def main():
                         help="torch.compile du predictor (défaut : hardware.compile)")
     parser.add_argument("--log-every", type=int, default=50,
                         help="Fréquence (en batches) du log de la loss instantanée.")
+    parser.add_argument("--frameskip", type=int, default=1,
+                        help="Prédit z_{t+k} au lieu de z_{t+1} (paires construites "
+                             "depuis les frames encodées, cf. frameskip_pairs). "
+                             "5 ≈ 0,17 s à 30 fps : mouvement visible dans les latents.")
     parser.add_argument("--action-mode", default="absolute",
                         choices=["absolute", "delta"],
                         help="absolute : position cible ; delta : déplacement "
@@ -127,7 +131,9 @@ def main():
         sys.exit(1)
 
     print(f"\nChargement des données : {encoded_path}")
-    data = load_encoded(encoded_path)
+    data = frameskip_pairs(load_encoded(encoded_path), args.frameskip)
+    if args.frameskip > 1:
+        print(f"Frameskip {args.frameskip} : {len(data['action'])} paires (t, t+{args.frameskip})")
     embed_dim  = data["embed_dim"]
 
     latents = LatentPairs(data, args.data_device or hw["data_device"], device,
@@ -357,6 +363,7 @@ def main():
                 "embed_dim":            embed_dim,
                 "action_dim":           action_dim,
                 "action_stats":         action_stats.to_dict(),
+                "frameskip":            args.frameskip,
                 "epoch":                epoch,
                 "val_loss":             val_loss,
                 "val_identity":         id_loss,
