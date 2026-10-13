@@ -1,0 +1,81 @@
+# ═══════════════════════════════════════════════════════════════
+# Campagne c2 — 04 sur la simulation → LoRA (05) sur duck_dataset_v3.
+#
+#   python scripts/campaign.py --campaign configs/campaign_sim_lora.yaml [--dry-run]
+#
+# Même déroulé que c1 (configs/campaign_rtx4090.yaml, baseline sur les seules
+# démos réelles), mais 03/04 apprennent la dynamique sur la simulation
+# (OctoEnSueur/so101_sim_wm : 5 000 épisodes, 6 tâches d'exploration /
+# interaction, caméras wrist + front comme le robot), puis la LoRA adapte le
+# meilleur predictor aux démos réelles.
+#
+# Comparaison avec c1 : regarder val/ratio_vs_identity de C_lora (sur la val
+# réelle) contre celui du meilleur run 04 de c1. Les val loss brutes ne se
+# comparent pas : la fusion (03) n'est pas la même.
+# ═══════════════════════════════════════════════════════════════
+
+name: c2_sim_lora
+config: configs/rtx4090.yaml
+encoded_data: results/encoded/sim_encoded.pt
+# 882k frames → ~265 Go de latents : impossible en VRAM. 290 épisodes entiers
+# tirés au hasard (toutes les tâches représentées) ≈ 51k frames ≈ 15 Go, le
+# même volume que duck_dataset_v3 encodé. Pas d'augmentation : la simulation
+# a déjà sa randomisation de domaine, et chaque passe augmentée triplerait les
+# lignes (→ 3 fois moins d'épisodes).
+encode_args: [--dataset-id, OctoEnSueur/so101_sim_wm, --max-episodes, 290, --no-augment]
+fusion: auto
+# duck_dataset_v3 déjà encodé par c1 (même encodeur, mêmes caméras)
+real_data: results/encoded/encoded_data.pt
+
+stages:
+  # ── A / B / B_seeds : comme c1, sur la simulation ───────────────
+  - name: A_screen
+    script: "04"
+    epochs: 15
+    fixed: {batch_size: 64, n_layers: 6, weight_decay: 0.01, dropout: 0.1}
+    grid: {lr: [3.0e-5, 1.0e-4, 3.0e-4], residual: [false, true]}
+
+  - name: B_regul
+    script: "04"
+    epochs: 30
+    from_best: {stage: A_screen, top: 2, keep: [lr, residual]}
+    fixed: {batch_size: 64}
+    variants:
+      - {n_layers: 6, weight_decay: 0.01, dropout: 0.1}
+      - {n_layers: 6, weight_decay: 0.1, dropout: 0.1}
+      - {n_layers: 4, weight_decay: 0.01, dropout: 0.1}
+
+  - name: B_seeds
+    script: "04"
+    epochs: 30
+    from_best: {stage: B_regul, top: 1, keep: [lr, residual, n_layers, weight_decay, dropout]}
+    fixed: {batch_size: 64}
+    grid: {seed: [1, 2]}
+
+  # ── C. LoRA sur les démos réelles ───────────────────────────────
+  # Unités : la simulation écrit les actions dans [-100, 100], le robot en
+  # degrés (wrist_roll jusqu'à -140,8). Les stats d'actions de 04 (simu) ne
+  # veulent donc rien dire sur le réel : action_stats real les recalcule sur
+  # le train réel, et l'embedding d'action (Linear 6 → 384, 2 688 params)
+  # est réentraîné avec la LoRA pour réapprendre ce que signifie une action
+  # réelle. alpha = 2 × rank (échelle constante).
+  - name: C_lora
+    script: "05"
+    epochs: 20
+    requires: real_data
+    fixed: {batch_size: 32, action_stats: real, train_action_embed: true}
+    grid: {lr: [1.0e-4, 5.0e-4]}
+    variants:
+      - {lora_rank: 4, lora_alpha: 8}
+      - {lora_rank: 8, lora_alpha: 16}
+      - {lora_rank: 16, lora_alpha: 32}
+
+  # ── D. CEM sur la val réelle, avec le meilleur modèle LoRA ──────
+  - name: D_cem
+    script: "08"
+    fixed: {n_starts: 64, rollout_chunk: 500}
+    grid:
+      horizon: [5, 10, 20]
+      n_samples: [300, 1000]
+      n_iter: [3, 5]
+      cost: [cosine]

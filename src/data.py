@@ -136,12 +136,14 @@ class LeRobotPairsDataset(Dataset):
 
         # Récupérer episode_index pour TOUTES les frames d'un coup (sans décoder les vidéos)
         # hf_dataset est le dataset HF brut sans les images
-        ep_indices = self._dataset.hf_dataset["episode_index"]
+        # (une seule lecture de la colonne : l'accès élément par élément à une
+        # colonne datasets>=4 coûte des minutes sur ~900k frames)
+        ep_indices = torch.as_tensor(
+            self._dataset.hf_dataset.with_format(None)["episode_index"]).flatten()
 
-        for i in range(n_total - delta):
-            # Paire valide ssi frame_i et frame_{i+delta} sont dans le même épisode
-            if ep_indices[i] == ep_indices[i + delta]:
-                self._pairs_index.append((int(ep_indices[i]), i))
+        # Paire valide ssi frame_i et frame_{i+delta} sont dans le même épisode
+        starts = torch.nonzero(ep_indices[:-delta] == ep_indices[delta:]).flatten()
+        self._pairs_index = list(zip(ep_indices[starts].tolist(), starts.tolist()))
 
         print(f"[LeRobotDataLoader] {self._dataset.num_episodes} episodes, "
               f"{n_total} frames, {len(self._pairs_index)} paires valides.")
@@ -178,6 +180,10 @@ class LeRobotPairsDataset(Dataset):
         for key in IMAGE_KEYS:
             out[key] = convert(out[key])
         return out
+
+    def pair_episode(self, idx: int) -> int:
+        """Épisode de la paire `idx`."""
+        return self._pairs_index[idx][0]
 
     def pair_frame(self, idx: int) -> int:
         """Index global de la frame t de la paire `idx`."""

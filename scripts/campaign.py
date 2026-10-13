@@ -188,7 +188,8 @@ class Campaign:
         print(f"[Campagne] latents absents → 02 ({self.encoded})")
         if self.dry_run:
             return
-        code = stream(self.py("02", "--output", self.encoded),
+        code = stream(self.py("02", "--output", self.encoded,
+                              *map(str, self.spec.get("encode_args", []))),
                       self.dir / "02_encode.log", dict(os.environ, PYTHONUNBUFFERED="1"))
         if code != 0:
             sys.exit("[Campagne] 02 a échoué — voir 02_encode.log")
@@ -219,7 +220,8 @@ class Campaign:
         if stage.get("requires") and not self.spec.get(stage["requires"]):
             print(f"\n[Campagne] {name_s} sautée ({stage['requires']} non défini)")
             return
-        if stage["script"] == "05" and not resolve(self.spec["real_data"]).exists():
+        if (stage["script"] == "05" and not self.dry_run
+                and not resolve(self.spec["real_data"]).exists()):
             sys.exit(f"[Campagne] real_data introuvable : {self.spec['real_data']} — encoder "
                      "les démos réelles d'abord : python scripts/02_encode_dataset.py "
                      f"--config {self.config_path} --dataset-id <démos> --output {self.spec['real_data']}")

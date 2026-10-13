@@ -37,7 +37,7 @@ from src.fusion import make_fusion
 from src.lora import LoRAConfig, inject_lora, get_lora_parameters
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.data import split_train_val, describe_split
-from src.latents import ActionStats, LatentPairs, load_encoded
+from src.latents import ActionStats, LatentPairs, load_encoded, train_action_stats
 from src.device import (resolve_amp_dtype, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
                         peak_vram_gb, reset_peak_vram)
@@ -70,6 +70,14 @@ def main():
     parser.add_argument("--data-device", default=None,
                         help="auto / cuda / cpu — où héberger les latents")
     parser.add_argument("--compile", action="store_true")
+    parser.add_argument("--action-stats", default="ckpt", choices=["ckpt", "real"],
+                        help="ckpt : stats d'actions du predictor (même domaine). "
+                             "real : stats du train réel, quand le predictor vient "
+                             "d'un domaine aux unités différentes (simu en [-100, 100], "
+                             "robot en degrés) ; à combiner avec --train-action-embed.")
+    parser.add_argument("--train-action-embed", action="store_true",
+                        help="Entraîne aussi l'embedding d'action (Linear 6 → dim) : "
+                             "il réapprend ce que signifie une action réelle.")
     parser.add_argument("--log-every", type=int, default=20,
                         help="Fréquence (en batches) du log de la loss instantanée.")
     add_wandb_args(parser)
@@ -139,12 +147,18 @@ def main():
                                          val_fraction=float(cfg.get("dataset", {}).get("val_fraction", 0.2)))
     print(f"Split : {describe_split(real, train_idx, val_idx)}")
 
-    # Mêmes stats d'actions que le predictor de 04 : le LoRA adapte un modèle
-    # qui a appris dans cet espace normalisé, il ne faut pas le redéfinir.
+    # Par défaut, mêmes stats d'actions que le predictor de 04 : le LoRA adapte
+    # un modèle qui a appris dans cet espace normalisé. Si 04 vient d'un autre
+    # domaine (simu en [-100, 100], robot en degrés), ces stats ne veulent rien
+    # dire ici : --action-stats real les recalcule sur le train réel.
     if "action_stats" not in ckpt:
         sys.exit("[ERREUR] Checkpoint sans action_stats : réentraîner 04 avec le "
                  "code actuel (actions normalisées).")
-    action_stats = ActionStats.from_dict(ckpt["action_stats"])
+    if args.action_stats == "real":
+        action_stats = train_action_stats(real, train_idx)
+        print("  Stats d'actions : recalculées sur le train réel")
+    else:
+        action_stats = ActionStats.from_dict(ckpt["action_stats"])
     latents.normalize_actions(action_stats)
 
     fusion.to(device).eval()        # fusion gelée (entraînée en Phase A)
@@ -157,6 +171,13 @@ def main():
     # === Optimiser uniquement les params LoRA ===
     lora_params = get_lora_parameters(raw_predictor)
     n_lora = sum(p.numel() for p in lora_params)
+    if args.train_action_embed:
+        embed_params = list(raw_predictor.action_emb.parameters())
+        for p in embed_params:
+            p.requires_grad = True
+        lora_params = lora_params + embed_params
+        print(f"  + embedding d'action entraînable : "
+              f"{sum(p.numel() for p in embed_params):,} params")
     print(f"\n  Params LoRA à entraîner : {n_lora:,}")
 
     optimizer = make_adamw(lora_params, args.lr, 1e-4, device)

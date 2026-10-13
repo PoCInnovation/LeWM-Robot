@@ -72,6 +72,11 @@ def main():
     parser.add_argument("--max-pairs", type=int, default=None,
                         help="Limite le nombre de paires (pour test rapide). "
                              "None = toutes les paires.")
+    parser.add_argument("--max-episodes", type=int, default=None,
+                        help="Garde N épisodes entiers tirés au hasard (seed de la "
+                             "config) : frames consécutives conservées (08) et "
+                             "toutes les tâches représentées. Pour un gros dataset "
+                             "(simulation) dont les latents ne tiendraient pas en VRAM.")
     parser.add_argument("--aug-passes", type=int, default=None,
                         help="Passes AUGMENTÉES en plus de la passe propre. "
                              "Chaque passe re-tire des paramètres au hasard, "
@@ -150,6 +155,16 @@ def main():
     )
     base_dataset = LeRobotPairsDataset(data_cfg)
     dataset = base_dataset
+    if args.max_episodes is not None:
+        episodes = sorted({base_dataset.pair_episode(i) for i in range(len(base_dataset))})
+        if args.max_episodes < len(episodes):
+            g = torch.Generator().manual_seed(cfg["seed"])
+            keep = {episodes[j] for j in
+                    torch.randperm(len(episodes), generator=g)[:args.max_episodes].tolist()}
+            dataset = Subset(base_dataset, [i for i in range(len(base_dataset))
+                                            if base_dataset.pair_episode(i) in keep])
+            print(f"[MAX-EPISODES] {len(keep)} épisodes sur {len(episodes)} "
+                  f"→ {len(dataset)} paires")
     if args.max_pairs is not None and args.max_pairs < len(dataset):
         # Subsample en gardant des paires de plusieurs épisodes (stride)
         step = len(dataset) // args.max_pairs
