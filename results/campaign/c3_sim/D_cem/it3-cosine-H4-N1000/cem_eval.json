@@ -1,0 +1,19 @@
+{
+  "name": "cem-H4-N1000-it3-cosine",
+  "horizon": 4,
+  "frameskip": 5,
+  "n_samples": 1000,
+  "n_elites": 100,
+  "n_iter": 3,
+  "cost": "cosine",
+  "initial_std": 1.0,
+  "n_starts": 64,
+  "mae_first": 0.518542603822425,
+  "mae_seq": 0.5698422030545771,
+  "mae_first_ratio": 1.118647811393535,
+  "mae_seq_ratio": 1.1347722992736382,
+  "mae_first_deg": 3.7491985000669956,
+  "final_cost": 0.005559484474360943,
+  "ms_per_plan": 2030.2239172160625,
+  "checkpoint": "/root/c3/results/campaign/c3_sim/best_predictor_real.pt"
+}

@@ -1,0 +1,12 @@
+{
+  "best_val_loss": 0.0022339737246511505,
+  "best_ratio_vs_identity": 0.9133843494044698,
+  "val_identity": 0.0024458200166312355,
+  "epochs": 15,
+  "seed": 42,
+  "best_epoch": 7,
+  "still_improving": false,
+  "epoch_seconds_mean": 19.094496742884317,
+  "train_seconds": 286.41745114326477,
+  "checkpoint": "/root/LeWM-Robot/results/campaign/c1/A_screen/L6-wd0.01-do0.1-lr0.0001-res/predictor.pt"
+}

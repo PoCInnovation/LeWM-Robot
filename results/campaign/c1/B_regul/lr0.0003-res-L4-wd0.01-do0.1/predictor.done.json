@@ -1,0 +1,12 @@
+{
+  "best_val_loss": 0.0022329900520465648,
+  "best_ratio_vs_identity": 0.9129821642077273,
+  "val_identity": 0.0024458200166312355,
+  "epochs": 30,
+  "seed": 42,
+  "best_epoch": 10,
+  "still_improving": false,
+  "epoch_seconds_mean": 13.460514903068542,
+  "train_seconds": 403.8154470920563,
+  "checkpoint": "/root/LeWM-Robot/results/campaign/c1/B_regul/lr0.0003-res-L4-wd0.01-do0.1/predictor.pt"
+}

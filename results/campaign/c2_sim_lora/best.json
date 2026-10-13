@@ -1,0 +1,93 @@
+{
+  "predictor": {
+    "name": "lr0.0001-res-L6-wd0.1-do0.1",
+    "params": {
+      "batch_size": 64,
+      "lr": 0.0001,
+      "residual": true,
+      "n_layers": 6,
+      "weight_decay": 0.1,
+      "dropout": 0.1
+    },
+    "dir": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L6-wd0.1-do0.1",
+    "wall_seconds": 1011.2791335582733,
+    "result": {
+      "best_val_loss": 0.0005010390935703921,
+      "best_ratio_vs_identity": 0.8452236787007069,
+      "val_identity": 0.0005927887566290126,
+      "epochs": 30,
+      "seed": 42,
+      "best_epoch": 23,
+      "still_improving": false,
+      "epoch_seconds_mean": 33.08989273707072,
+      "train_seconds": 992.6967821121216,
+      "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L6-wd0.1-do0.1/predictor.pt"
+    }
+  },
+  "seeds": {
+    "config": "lr0.0001-res-L6-wd0.1-do0.1",
+    "val_losses": [
+      0.0005010390935703921,
+      0.0005039232163358517,
+      0.000504148865175674
+    ],
+    "mean": 0.0005030370583606393,
+    "spread": 3.109771605281893e-06,
+    "second": "lr0.0001-res-L6-wd0.01-do0.1",
+    "gap": 1.196850697195162e-07,
+    "significant": false
+  },
+  "lora": {
+    "name": "lr0.0005-r16",
+    "params": {
+      "batch_size": 32,
+      "action_stats": "real",
+      "train_action_embed": true,
+      "lr": 0.0005,
+      "lora_rank": 16,
+      "lora_alpha": 32
+    },
+    "dir": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r16",
+    "wall_seconds": 707.9444761276245,
+    "result": {
+      "best_val_loss": 0.0027222201878127333,
+      "best_ratio_vs_identity": 0.8816421747565526,
+      "epochs": 20,
+      "best_epoch": 5,
+      "epoch_seconds_mean": 34.80302712884732,
+      "train_seconds": 696.0605425769463,
+      "checkpoint": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r16/predictor_real.pt"
+    }
+  },
+  "cem": {
+    "name": "H10-N1000-it3-cosine",
+    "params": {
+      "n_starts": 64,
+      "rollout_chunk": 500,
+      "horizon": 10,
+      "n_samples": 1000,
+      "n_iter": 3,
+      "cost": "cosine"
+    },
+    "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H10-N1000-it3-cosine",
+    "wall_seconds": 487.29469442367554,
+    "result": {
+      "name": "cem-H10-N1000-it3-cosine",
+      "horizon": 10,
+      "n_samples": 1000,
+      "n_elites": 100,
+      "n_iter": 3,
+      "cost": "cosine",
+      "initial_std": 1.0,
+      "n_starts": 64,
+      "mae_first": 0.6627503102645278,
+      "mae_seq": 0.6490573468618095,
+      "mae_first_ratio": 0.9738555765411582,
+      "mae_seq_ratio": 0.9571642562117905,
+      "mae_first_deg": 23.69115498661995,
+      "final_cost": 0.007717312313616276,
+      "ms_per_plan": 7438.30307200551,
+      "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+    }
+  }
+}

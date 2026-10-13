@@ -1,0 +1,76 @@
+{
+  "predictor": {
+    "name": "res-lr0.0001-L6-wd0.1-do0.1-seed2",
+    "params": {
+      "batch_size": 64,
+      "residual": true,
+      "frameskip": 5,
+      "action_mode": "delta",
+      "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+      "lr": 0.0001,
+      "n_layers": 6,
+      "weight_decay": 0.1,
+      "dropout": 0.1,
+      "seed": 2
+    },
+    "dir": "/root/c3/results/campaign/c3_real/A_seeds/res-lr0.0001-L6-wd0.1-do0.1-seed2",
+    "wall_seconds": 163.32859826087952,
+    "result": {
+      "best_val_loss": 0.0046465564921328965,
+      "best_ratio_vs_identity": 0.7517549047725874,
+      "val_identity": 0.006180946027267386,
+      "epochs": 15,
+      "seed": 2,
+      "best_epoch": 8,
+      "still_improving": false,
+      "epoch_seconds_mean": 9.887676111857097,
+      "train_seconds": 148.31514167785645,
+      "checkpoint": "/root/c3/results/campaign/c3_real/A_seeds/res-lr0.0001-L6-wd0.1-do0.1-seed2/predictor.pt"
+    }
+  },
+  "seeds": {
+    "config": "res-lr0.0001-L6-wd0.1-do0.1",
+    "val_losses": [
+      0.0046540890502828084,
+      0.004668646917509085,
+      0.0046465564921328965
+    ],
+    "mean": 0.0046564308199749304,
+    "spread": 2.209042537618805e-05,
+    "second": "res-lr0.0001-L6-wd0.01-do0.1",
+    "gap": 5.38933514194085e-06,
+    "significant": false
+  },
+  "cem": {
+    "name": "it3-cosine-H4-N1000",
+    "params": {
+      "n_starts": 64,
+      "rollout_chunk": 500,
+      "n_iter": 3,
+      "cost": "cosine",
+      "horizon": 4,
+      "n_samples": 1000
+    },
+    "dir": "/root/c3/results/campaign/c3_real/D_cem/it3-cosine-H4-N1000",
+    "wall_seconds": 144.74055123329163,
+    "result": {
+      "name": "cem-H4-N1000-it3-cosine",
+      "horizon": 4,
+      "frameskip": 5,
+      "n_samples": 1000,
+      "n_elites": 100,
+      "n_iter": 3,
+      "cost": "cosine",
+      "initial_std": 1.0,
+      "n_starts": 64,
+      "mae_first": 0.520368670928292,
+      "mae_seq": 0.5539203404914588,
+      "mae_first_ratio": 1.1225871713542748,
+      "mae_seq_ratio": 1.1030658224759935,
+      "mae_first_deg": 3.833769341930747,
+      "final_cost": 0.005627168342471123,
+      "ms_per_plan": 2095.1011553406715,
+      "checkpoint": "/root/c3/results/campaign/c3_real/best_predictor.pt"
+    }
+  }
+}

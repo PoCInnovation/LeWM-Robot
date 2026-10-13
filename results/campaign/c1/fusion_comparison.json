@@ -1,0 +1,30 @@
+{
+  "concat": {
+    "params": 0,
+    "output_tokens": 392,
+    "final_train_mae": 0.09479994877729082,
+    "final_val_mae": 0.19697440978868888,
+    "best_val_mae": 0.18426812864488204
+  },
+  "concat_view": {
+    "params": 768,
+    "output_tokens": 392,
+    "final_train_mae": 0.08395561561381011,
+    "final_val_mae": 0.19234508915106746,
+    "best_val_mae": 0.18620511895418684
+  },
+  "cross_attn_bd": {
+    "params": 1184256,
+    "output_tokens": 392,
+    "final_train_mae": 0.06485884802209006,
+    "final_val_mae": 0.16439488361437266,
+    "best_val_mae": 0.14083924004488152
+  },
+  "late_cls": {
+    "params": 1181056,
+    "output_tokens": 1,
+    "final_train_mae": 0.0773721631970534,
+    "final_val_mae": 0.19362421398194357,
+    "best_val_mae": 0.18713568044606577
+  }
+}

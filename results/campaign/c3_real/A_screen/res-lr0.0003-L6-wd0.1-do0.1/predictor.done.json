@@ -1,0 +1,12 @@
+{
+  "best_val_loss": 0.004715110211294483,
+  "best_ratio_vs_identity": 0.7628460417699274,
+  "val_identity": 0.006180946027267386,
+  "epochs": 15,
+  "seed": 42,
+  "best_epoch": 5,
+  "still_improving": false,
+  "epoch_seconds_mean": 9.803102970123291,
+  "train_seconds": 147.04654455184937,
+  "checkpoint": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0003-L6-wd0.1-do0.1/predictor.pt"
+}

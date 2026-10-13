@@ -1,0 +1,12 @@
+{
+  "best_val_loss": 0.0022316598469236245,
+  "best_ratio_vs_identity": 0.912438295438196,
+  "val_identity": 0.0024458200166312355,
+  "epochs": 5,
+  "seed": 42,
+  "best_epoch": 4,
+  "still_improving": true,
+  "epoch_seconds_mean": 48.47488431930542,
+  "train_seconds": 242.3744215965271,
+  "checkpoint": "/root/c3/results/test_delta/predictor.pt"
+}

@@ -1,0 +1,72 @@
+{
+  "predictor": {
+    "name": "lr3e-05-res-L6-wd0.1-do0.1-seed1",
+    "params": {
+      "batch_size": 64,
+      "lr": 3e-05,
+      "residual": true,
+      "n_layers": 6,
+      "weight_decay": 0.1,
+      "dropout": 0.1,
+      "seed": 1
+    },
+    "dir": "/root/LeWM-Robot/results/campaign/c1/B_seeds/lr3e-05-res-L6-wd0.1-do0.1-seed1",
+    "wall_seconds": 591.360554933548,
+    "result": {
+      "best_val_loss": 0.0022213715128600597,
+      "best_ratio_vs_identity": 0.9082317986421907,
+      "val_identity": 0.0024458200166312355,
+      "epochs": 30,
+      "seed": 1,
+      "best_epoch": 11,
+      "still_improving": false,
+      "epoch_seconds_mean": 19.12983682155609,
+      "train_seconds": 573.8951046466827,
+      "checkpoint": "/root/LeWM-Robot/results/campaign/c1/B_seeds/lr3e-05-res-L6-wd0.1-do0.1-seed1/predictor.pt"
+    }
+  },
+  "seeds": {
+    "config": "lr3e-05-res-L6-wd0.1-do0.1",
+    "val_losses": [
+      0.0022313584816098836,
+      0.0022213715128600597,
+      0.0022289093409199267
+    ],
+    "mean": 0.002227213111796623,
+    "spread": 9.986968749823872e-06,
+    "second": "lr3e-05-res-L6-wd0.01-do0.1",
+    "gap": 3.6451965570441155e-07,
+    "significant": false
+  },
+  "cem": {
+    "name": "H20-N1000-it3-cosine",
+    "params": {
+      "n_starts": 64,
+      "rollout_chunk": 500,
+      "horizon": 20,
+      "n_samples": 1000,
+      "n_iter": 3,
+      "cost": "cosine"
+    },
+    "dir": "/root/LeWM-Robot/results/campaign/c1/D_cem/H20-N1000-it3-cosine",
+    "wall_seconds": 674.707113981247,
+    "result": {
+      "name": "cem-H20-N1000-it3-cosine",
+      "horizon": 20,
+      "n_samples": 1000,
+      "n_elites": 100,
+      "n_iter": 3,
+      "cost": "cosine",
+      "initial_std": 1.0,
+      "n_starts": 64,
+      "mae_first": 0.7513257432729006,
+      "mae_seq": 0.7965049687772989,
+      "mae_first_ratio": 1.136281244746923,
+      "mae_seq_ratio": 1.1841651235585764,
+      "mae_first_deg": 27.118218928575516,
+      "final_cost": 0.01460710633546114,
+      "ms_per_plan": 10379.016354680061,
+      "checkpoint": "/root/LeWM-Robot/results/campaign/c1/best_predictor.pt"
+    }
+  }
+}

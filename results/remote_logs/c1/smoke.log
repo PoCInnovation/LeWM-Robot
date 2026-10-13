@@ -1,0 +1,486 @@
+══════════════════════════════════════════════════════
+ LeWM-Robot — chaîne locale (GPU NVIDIA)
+   DATASET  : divisio74/duck_dataset_v3
+   CONFIG   : configs/rtx4090.yaml
+   ENCODED  : results/encoded/_smoke_encoded_data.pt
+   SMOKE    : 1
+══════════════════════════════════════════════════════
+
+══════ [check_gpu] .venv/bin/python scripts/00_check_gpu.py --config configs/rtx4090.yaml
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+[OK] Fusion + SDPA + backward + AdamW sur cuda, autocast=torch.bfloat16.
+
+══════ [test_encoder] .venv/bin/python scripts/01_test_dinov3.py --config configs/rtx4090.yaml
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+============================================================
+TEST 1 : Chargement et encodage de l'encodeur
+============================================================
+[DINOv3Encoder] Loading facebook/dinov3-vits16-pretrain-lvd1689m on cuda (bfloat16)...
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 3481.37it/s]
+[DINOv3Encoder] Loaded. embed_dim=384, num_patches=196, patch_size=16, register_tokens=4, attn=sdpa
+
+Device utilisé : cuda  |  dtype poids : torch.bfloat16
+Embed dim      : 384
+Num patches    : 196 (patch_size réel : 16)
+Register tokens: 4
+
+--- Test encodage batch dummy (B=64) ---
+Input  : (64, 3, 224, 224)
+Output : (64, 196, 384) torch.float32
+Time   : 14.8 ms/batch  (0.23 ms/image, 4310.8 img/s)
+
+--- Test extraction CLS ---
+Patches : (64, 196, 384)
+CLS     : (64, 384)
+
+--- Test avec image uint8 ---
+Input  : (2, 3, 224, 224) (torch.uint8)
+Output : (2, 196, 384)  |  max |uint8 - float| = 0.00e+00
+
+--- Précision réduite vs fp32 ---
+[DINOv3Encoder] Loading facebook/dinov3-vits16-pretrain-lvd1689m on cuda (float32)...
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 5139.87it/s]
+[DINOv3Encoder] Loaded. embed_dim=384, num_patches=196, patch_size=16, register_tokens=4, attn=sdpa
+cos(bf16, fp32) : min=0.99976 mean=0.99983  (attendu > 0.99)
+Débit           : torch.bfloat16 4310.8 img/s  vs fp32 2139.8 img/s  (x2.0)
+VRAM pic        : 0.44 GB
+
+[OK] L'encodeur fonctionne correctement.
+
+Prochaine étape : encoder le dataset
+  python scripts/02_encode_dataset.py
+
+══════ [encode] .venv/bin/python scripts/02_encode_dataset.py --config configs/rtx4090.yaml --dataset-id divisio74/duck_dataset_v3 --output results/encoded/_smoke_encoded_data.pt --max-pairs 200
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+
+Dataset      : divisio74/duck_dataset_v3
+Encoder      : dinov3-small
+Batch size   : 64  |  Workers : 8
+
+[DINOv3Encoder] Loading facebook/dinov3-vits16-pretrain-lvd1689m on cuda (bfloat16)...
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 3323.81it/s]
+[DINOv3Encoder] Loaded. embed_dim=384, num_patches=196, patch_size=16, register_tokens=4, attn=sdpa
+[Augmentation] enabled=True  intensity=1.0
+[Augmentation] techniques : crop, blur, color, sensor
+[Augmentation] 11 recettes : original, crop, blur, color, sensor, crop + blur, crop + color, crop + sensor, blur + color, blur + sensor, color + sensor
+[Augmentation] params partages entre cameras : True
+[Augmentation] /!\ technique GEOMETRIQUE active (crop) : le lien image <-> action n'est plus exact (actions non ajustees).
+
+[LeRobotDataLoader] Loading divisio74/duck_dataset_v3...
+[LeRobotDataLoader] torchcodec indisponible (libs FFmpeg ?) → backend vidéo 'pyav'.
+Fetching 4 files:   0%|          | 0/4 [00:00<?, ?it/s]Fetching 4 files:  25%|██▌       | 1/4 [00:00<00:01,  2.06it/s]Fetching 4 files:  75%|███████▌  | 3/4 [00:01<00:00,  1.93it/s]Fetching 4 files: 100%|██████████| 4/4 [00:01<00:00,  2.30it/s]Fetching 4 files: 100%|██████████| 4/4 [00:01<00:00,  2.19it/s]
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files:  56%|█████▌    | 5/9 [00:00<00:00, 11.72it/s]Fetching 9 files:  78%|███████▊  | 7/9 [00:01<00:00,  3.76it/s]Fetching 9 files:  89%|████████▉ | 8/9 [00:03<00:00,  1.83it/s]Fetching 9 files: 100%|██████████| 9/9 [00:03<00:00,  2.04it/s]Fetching 9 files: 100%|██████████| 9/9 [00:03<00:00,  2.56it/s]
+[LeRobotDataLoader] 40 episodes, 17518 frames, 17478 paires valides.
+[MAX-PAIRS] Sous-échantillonnage : 200 paires (stride=87)
+Total paires : 200
+Passes       : 2 (1 propre + 1 augmentées)
+Frames       : 400 uniques (passe propre) + 400 augmentées = 800 lignes
+Latents      : 0.2 GB (2 caméras x 196 patches x 384 dims x bfloat16), tables sur cuda
+
+Encoding (propre, frames uniques):   0%|          | 0/7 [00:00<?, ?it/s]Encoding (propre, frames uniques):  14%|█▍        | 1/7 [00:08<00:48,  8.12s/it]Encoding (propre, frames uniques):  86%|████████▌ | 6/7 [00:08<00:01,  1.02s/it]Encoding (propre, frames uniques): 100%|██████████| 7/7 [00:08<00:00,  1.21s/it]
+Encoding (augmentée 1/1):   0%|          | 0/4 [00:00<?, ?it/s]Encoding (augmentée 1/1):  25%|██▌       | 1/4 [00:15<00:46, 15.65s/it]Encoding (augmentée 1/1):  50%|█████     | 2/4 [00:16<00:13,  6.92s/it]Encoding (augmentée 1/1):  75%|███████▌  | 3/4 [00:16<00:03,  3.85s/it]Encoding (augmentée 1/1): 100%|██████████| 4/4 [00:17<00:00,  4.25s/it]
+
+Encodage terminé en 25.4s (63.6 ms/paire, 63 img/s)
+VRAM pic : 1.36 GB  (si le GPU est loin de 100 % dans nvidia-smi, augmenter --num-workers : le décodage vidéo est le goulot)
+Sauvé : /root/LeWM-Robot/results/encoded/_smoke_encoded_data.pt
+
+Prochaine étape : python scripts/03_compare_fusion.py --encoded-data /root/LeWM-Robot/results/encoded/_smoke_encoded_data.pt
+
+══════ [fusion] .venv/bin/python scripts/03_compare_fusion.py --config configs/rtx4090.yaml --encoded-data results/encoded/_smoke_encoded_data.pt --n-epochs 2
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /root/.netrc.
+wandb: Currently logged in as: kamil-akeramou (kamil-akeramou-poc) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run lg8ortlr
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_103355-lg8ortlr
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-concat
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/lg8ortlr
+wandb: updating run metadata
+wandb: uploading wandb-metadata.json; uploading requirements.txt; uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading wandb-metadata.json; uploading output.log; uploading wandb-summary.json
+wandb: uploading history steps 0-1, summary, console lines 0-2
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁█
+wandb: perf/epoch_seconds █▁
+wandb:          train/mae █▁
+wandb:            val/mae █▁
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.45237
+wandb:              epoch 1
+wandb:    final_train_mae 0.58111
+wandb:      final_val_mae 0.45237
+wandb:      output_tokens 392
+wandb:       peak_vram_gb 0.3338
+wandb: perf/epoch_seconds 0.02648
+wandb:          train/mae 0.58111
+wandb:            val/mae 0.45237
+wandb: 
+wandb: 🚀 View run fusion-concat at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/lg8ortlr
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_103355-lg8ortlr/logs
+wandb: setting up run 9dvxbgut
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_103359-9dvxbgut
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-concat_view
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/9dvxbgut
+wandb: updating run metadata; uploading data
+wandb: uploading history steps 0-1, summary, console lines 0-2
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁█
+wandb: perf/epoch_seconds ▁█
+wandb:          train/mae █▁
+wandb:            val/mae ▁█
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.43629
+wandb:              epoch 1
+wandb:    final_train_mae 0.57232
+wandb:      final_val_mae 0.44273
+wandb:      output_tokens 392
+wandb:       peak_vram_gb 0.34345
+wandb: perf/epoch_seconds 0.03226
+wandb:          train/mae 0.57232
+wandb:            val/mae 0.44273
+wandb: 
+wandb: 🚀 View run fusion-concat_view at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/9dvxbgut
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_103359-9dvxbgut/logs
+wandb: setting up run 26gad5bz
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_103402-26gad5bz
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-cross_attn_bd
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/26gad5bz
+wandb: updating run metadata; uploading data
+wandb: uploading history steps 0-1, summary, console lines 0-2
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁█
+wandb: perf/epoch_seconds █▁
+wandb:          train/mae █▁
+wandb:            val/mae █▁
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.40757
+wandb:              epoch 1
+wandb:    final_train_mae 0.54456
+wandb:      final_val_mae 0.40757
+wandb:      output_tokens 392
+wandb:       peak_vram_gb 0.45654
+wandb: perf/epoch_seconds 0.06083
+wandb:          train/mae 0.54456
+wandb:            val/mae 0.40757
+wandb: 
+wandb: 🚀 View run fusion-cross_attn_bd at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/26gad5bz
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_103402-26gad5bz/logs
+wandb: setting up run txxaw5tb
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_103405-txxaw5tb
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-late_cls
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/txxaw5tb
+wandb: updating run metadata; uploading data
+wandb: uploading config.yaml; uploading wandb-metadata.json; uploading requirements.txt; uploading output.log; uploading wandb-summary.json
+wandb: uploading history steps 0-1, summary, console lines 0-2
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁█
+wandb: perf/epoch_seconds ▁█
+wandb:          train/mae █▁
+wandb:            val/mae ▁█
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.48224
+wandb:              epoch 1
+wandb:    final_train_mae 0.62339
+wandb:      final_val_mae 0.50468
+wandb:      output_tokens 1
+wandb:       peak_vram_gb 0.33464
+wandb: perf/epoch_seconds 0.04099
+wandb:          train/mae 0.62339
+wandb:            val/mae 0.50468
+wandb: 
+wandb: 🚀 View run fusion-late_cls at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/txxaw5tb
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_103405-txxaw5tb/logs
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+============================================================
+TEST 3 : Comparaison des stratégies de fusion multi-camera
+============================================================
+[Precision] autocast: torch.bfloat16
+[Data] 0.24 GB de latents hébergés sur cuda — aucun transfert CPU→GPU pendant le training.
+
+Données chargées :
+  N paires       : 400
+  Num patches    : 196
+  Embed dim      : 384
+  Action dim     : 6
+
+Split : 318 train (147 augmentés) / 43 val (0 augmenté) — épisodes : 32 train / 8 val
+MAE ci-dessous en espace normalisé (1.0 = un écart-type de l'articulation)
+
+────────────────────────────────────────────────────────────
+Stratégie : concat
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 0
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/lg8ortlr
+  epoch   1/2  train MAE=0.69388  val MAE=0.46631  [0.3s/epoch]
+  VRAM pic : 0.33 GB
+
+────────────────────────────────────────────────────────────
+Stratégie : concat_view
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 768
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/9dvxbgut
+  epoch   1/2  train MAE=0.68705  val MAE=0.43629  [0.0s/epoch]
+  VRAM pic : 0.34 GB
+
+────────────────────────────────────────────────────────────
+Stratégie : cross_attn_bd
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 1,184,256
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/26gad5bz
+  epoch   1/2  train MAE=0.66240  val MAE=0.48125  [0.1s/epoch]
+  VRAM pic : 0.46 GB
+
+────────────────────────────────────────────────────────────
+Stratégie : late_cls
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 1,181,056
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/txxaw5tb
+  epoch   1/2  train MAE=0.69927  val MAE=0.48224  [0.0s/epoch]
+  VRAM pic : 0.33 GB
+
+============================================================
+RÉSULTATS COMPARATIFS
+============================================================
+Stratégie              Params   Tokens    Train MAE      Val MAE
+--------------------------------------------------------------
+concat                      0      392      0.58111      0.45237
+concat_view               768      392      0.57232      0.43629
+cross_attn_bd       1,184,256      392      0.54456      0.40757  << gagnante
+late_cls            1,181,056        1      0.62339      0.48224
+
+Résultats sauvés dans : /root/LeWM-Robot/results/fusion_comparison.json
+Plot sauvé dans       : /root/LeWM-Robot/results/fusion_comparison.png
+
+Pour le predictor : python scripts/04_train_predictor.py --encoded-data /root/LeWM-Robot/results/encoded/_smoke_encoded_data.pt --fusion cross_attn_bd
+[run_local] Fusion retenue : cross_attn_bd
+
+══════ [train] .venv/bin/python scripts/04_train_predictor.py --config configs/rtx4090.yaml --encoded-data results/encoded/_smoke_encoded_data.pt --output results/checkpoints/_smoke_predictor_simu.pt --fusion cross_attn_bd --n-epochs 2 --batch-size 16 --n-layers 2
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /root/.netrc.
+wandb: Currently logged in as: kamil-akeramou (kamil-akeramou-poc) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run ffqlp7af
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_103416-ffqlp7af
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run predictor-cross_attn_bd
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/ffqlp7af
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+
+Chargement des données : /root/LeWM-Robot/results/encoded/_smoke_encoded_data.pt
+[Data] 0.24 GB de latents hébergés sur cuda — aucun transfert CPU→GPU pendant le training.
+  N paires   : 400
+  Embed dim  : 384
+  Action dim : 6
+[Fusion] poids de 03 chargés : /root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt
+
+[Fusion] strategy : cross_attn_bd, params : 1,184,256 (gelée)
+[Predictor] params : 3,945,600
+[Precision] autocast: torch.bfloat16
+
+Split : 318 train (147 augmentés) / 43 val (0 augmenté) — épisodes : 32 train / 8 val
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/ffqlp7af
+
+=== Training 2 epochs ===
+
+Epoch 1/2:   0%|          | 0/20 [00:00<?, ?it/s]Epoch 1/2:   5%|▌         | 1/20 [00:00<00:07,  2.67it/s]Epoch 1/2:  55%|█████▌    | 11/20 [00:00<00:00, 28.90it/s]Epoch 1/2:  95%|█████████▌| 19/20 [00:00<00:00, 42.42it/s]Epoch 1/2: 100%|██████████| 20/20 [00:00<00:00, 33.19it/s]
+  train=0.09057  val=0.06536  (identité 0.05959, ratio 1.097)  lr=1.00e-04  [1s, 513 éch/s, VRAM pic 0.7 GB]
+  [Best val, saved to _smoke_predictor_simu.pt]
+Epoch 2/2:   0%|          | 0/20 [00:00<?, ?it/s]Epoch 2/2:  50%|█████     | 10/20 [00:00<00:00, 90.59it/s]Epoch 2/2: 100%|██████████| 20/20 [00:00<00:00, 81.19it/s]Epoch 2/2: 100%|██████████| 20/20 [00:00<00:00, 82.36it/s]
+wandb: updating run metadata
+wandb: uploading wandb-metadata.json; uploading requirements.txt; uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading history steps 0-1, summary, console lines 0-9
+wandb: 
+wandb: Run history:
+wandb:                epoch ▁█
+wandb:   perf/epoch_seconds █▁
+wandb:     perf/gpu_peak_gb ▁█
+wandb:   perf/samples_per_s ▁█
+wandb:  train/grad_norm_max █▁
+wandb: train/grad_norm_mean █▁
+wandb:           train/loss █▁
+wandb:             train/lr █▁
+wandb:     val/identity_mse ▁▁
+wandb:             val/loss █▁
+wandb:                   +1 ...
+wandb: 
+wandb: Run summary:
+wandb: best_ratio_vs_identity 1.0409
+wandb:          best_val_loss 0.06203
+wandb:                  epoch 1
+wandb:                 epochs 2
+wandb:     perf/epoch_seconds 0.25922
+wandb:       perf/gpu_peak_gb 0.66518
+wandb:     perf/samples_per_s 1226.76902
+wandb:            total_hours 0
+wandb:          total_seconds 1.08263
+wandb:    train/grad_norm_max 0.06755
+wandb:                     +6 ...
+wandb: 
+wandb: 🚀 View run predictor-cross_attn_bd at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/ffqlp7af
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_103416-ffqlp7af/logs
+  train=0.07060  val=0.06203  (identité 0.05959, ratio 1.041)  lr=5.00e-05  [0s, 1227 éch/s, VRAM pic 0.7 GB]
+  [Best val, saved to _smoke_predictor_simu.pt]
+
+=== Training terminé ===
+Best val loss : 0.06203  (ratio vs identité : 1.041)
+[ATTENTION] Le predictor ne bat pas la baseline « rien ne bouge » (z_t+1 = z_t) : il n'a pas appris la dynamique.
+Durée         : 0.0 min
+Checkpoint    : /root/LeWM-Robot/results/checkpoints/_smoke_predictor_simu.pt
+
+══════ [demo] .venv/bin/python scripts/06_inference_demo.py --config configs/rtx4090.yaml --dataset-id divisio74/duck_dataset_v3 --predictor-ckpt results/checkpoints/_smoke_predictor_simu.pt --n-samples 64 --n-iter 2 --horizon 5
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+
+Device : cuda
+
+--- Chargement DINOv3 ---
+[DINOv3Encoder] Loading facebook/dinov3-vits16-pretrain-lvd1689m on cuda (bfloat16)...
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 3720.29it/s]
+[DINOv3Encoder] Loaded. embed_dim=384, num_patches=196, patch_size=16, register_tokens=4, attn=sdpa
+
+--- Chargement du predictor ---
+Checkpoint   : /root/LeWM-Robot/results/checkpoints/_smoke_predictor_simu.pt
+  Fusion     : cross_attn_bd
+  LoRA       : non
+  Val loss   : 0.062029210229714714
+  Predictor params : 3,945,600
+
+--- Démo : frames du dataset ---
+[LeRobotDataLoader] Loading divisio74/duck_dataset_v3...
+[LeRobotDataLoader] torchcodec indisponible (libs FFmpeg ?) → backend vidéo 'pyav'.
+Fetching 4 files:   0%|          | 0/4 [00:00<?, ?it/s]Fetching 4 files: 100%|██████████| 4/4 [00:00<00:00, 1009.22it/s]
+[LeRobotDataLoader] 40 episodes, 17518 frames, 17478 paires valides.
+Dataset chargé : 17478 paires disponibles
+  État courant : idx=0, episode=0
+  État goal    : idx=30, episode=0
+  z_current shape : (392, 384)
+  z_goal shape    : (392, 384)
+
+--- Planning avec CEM ---
+[CEM] n_samples=64 horizon=5 iter=2 chunk=all autocast=torch.bfloat16
+Planning latency : 34 ms  |  VRAM pic : 0.39 GB
+Actions shape    : (5, 6)
+Best cost final  : 0.12515
+Cost evolution   : [0.12517, 0.12515]
+
+Action prédite par CEM (step 0) : [ -8.1 -50.8  31.9  48.8 -13.    5.1]  (degrés)
+Action vraie dans le dataset    : [  10.8 -104.5   92.3   70.8    4.6    0.2]
+Différence absolue              : [18.9 53.8 60.4 22.  17.7  4.9]
+
+Note : Si predictor pas encore entraîné, la différence sera élevée.
+
+══════════════════════════════════════════════════════
+ Chaîne terminée.
+   Latents      : results/encoded/_smoke_encoded_data.pt
+   Fusions      : results/fusion_comparison.json (gagnante : cross_attn_bd)
+   Predictor    : results/checkpoints/_smoke_predictor_simu.pt
+
+   Logs         : logs/*_20261013_103247.log
+══════════════════════════════════════════════════════
+SMOKE_EXIT=0

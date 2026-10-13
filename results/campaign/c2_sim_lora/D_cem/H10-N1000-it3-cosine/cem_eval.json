@@ -1,0 +1,18 @@
+{
+  "name": "cem-H10-N1000-it3-cosine",
+  "horizon": 10,
+  "n_samples": 1000,
+  "n_elites": 100,
+  "n_iter": 3,
+  "cost": "cosine",
+  "initial_std": 1.0,
+  "n_starts": 64,
+  "mae_first": 0.6627503102645278,
+  "mae_seq": 0.6490573468618095,
+  "mae_first_ratio": 0.9738555765411582,
+  "mae_seq_ratio": 0.9571642562117905,
+  "mae_first_deg": 23.69115498661995,
+  "final_cost": 0.007717312313616276,
+  "ms_per_plan": 7438.30307200551,
+  "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+}

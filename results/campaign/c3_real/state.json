@@ -1,0 +1,379 @@
+{
+  "results": {
+    "A_screen": [
+      {
+        "name": "res-lr0.0001-L6-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0001,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0001-L6-wd0.01-do0.1",
+        "wall_seconds": 165.59132623672485,
+        "result": {
+          "best_val_loss": 0.004659478385424749,
+          "best_ratio_vs_identity": 0.7538455059904022,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 6,
+          "still_improving": false,
+          "epoch_seconds_mean": 9.812143834431966,
+          "train_seconds": 147.1821575164795,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0001-L6-wd0.01-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "res-lr0.0001-L6-wd0.1-do0.1",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0001,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0001-L6-wd0.1-do0.1",
+        "wall_seconds": 162.91558575630188,
+        "result": {
+          "best_val_loss": 0.0046540890502828084,
+          "best_ratio_vs_identity": 0.7529735787614368,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 6,
+          "still_improving": false,
+          "epoch_seconds_mean": 9.807909679412841,
+          "train_seconds": 147.11864519119263,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0001-L6-wd0.1-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "res-lr0.0001-L4-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0001,
+          "n_layers": 4,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0001-L4-wd0.01-do0.1",
+        "wall_seconds": 116.6624653339386,
+        "result": {
+          "best_val_loss": 0.00469495979857377,
+          "best_ratio_vs_identity": 0.7595859562374184,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 8,
+          "still_improving": false,
+          "epoch_seconds_mean": 6.860594908396403,
+          "train_seconds": 102.90892362594604,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0001-L4-wd0.01-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "res-lr0.0003-L6-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0003,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0003-L6-wd0.01-do0.1",
+        "wall_seconds": 162.33633828163147,
+        "result": {
+          "best_val_loss": 0.004713609988208522,
+          "best_ratio_vs_identity": 0.7626033243801713,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 5,
+          "still_improving": false,
+          "epoch_seconds_mean": 9.797081120808919,
+          "train_seconds": 146.9562168121338,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0003-L6-wd0.01-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "res-lr0.0003-L6-wd0.1-do0.1",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0003,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0003-L6-wd0.1-do0.1",
+        "wall_seconds": 162.12366914749146,
+        "result": {
+          "best_val_loss": 0.004715110211294483,
+          "best_ratio_vs_identity": 0.7628460417699274,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 5,
+          "still_improving": false,
+          "epoch_seconds_mean": 9.803102970123291,
+          "train_seconds": 147.04654455184937,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0003-L6-wd0.1-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "res-lr0.0003-L4-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0003,
+          "n_layers": 4,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0003-L4-wd0.01-do0.1",
+        "wall_seconds": 117.65482902526855,
+        "result": {
+          "best_val_loss": 0.0046923403839834715,
+          "best_ratio_vs_identity": 0.7591621676169156,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 6,
+          "still_improving": false,
+          "epoch_seconds_mean": 6.857560952504476,
+          "train_seconds": 102.86341428756714,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_screen/res-lr0.0003-L4-wd0.01-do0.1/predictor.pt"
+        }
+      }
+    ],
+    "A_seeds": [
+      {
+        "name": "res-lr0.0001-L6-wd0.1-do0.1-seed1",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0001,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1,
+          "seed": 1
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_seeds/res-lr0.0001-L6-wd0.1-do0.1-seed1",
+        "wall_seconds": 162.58050155639648,
+        "result": {
+          "best_val_loss": 0.004668646917509085,
+          "best_ratio_vs_identity": 0.7553288601636774,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 1,
+          "best_epoch": 4,
+          "still_improving": false,
+          "epoch_seconds_mean": 9.806855662663777,
+          "train_seconds": 147.10283493995667,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_seeds/res-lr0.0001-L6-wd0.1-do0.1-seed1/predictor.pt"
+        }
+      },
+      {
+        "name": "res-lr0.0001-L6-wd0.1-do0.1-seed2",
+        "params": {
+          "batch_size": 64,
+          "residual": true,
+          "frameskip": 5,
+          "action_mode": "delta",
+          "fusion_ckpt": "/root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt",
+          "lr": 0.0001,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1,
+          "seed": 2
+        },
+        "dir": "/root/c3/results/campaign/c3_real/A_seeds/res-lr0.0001-L6-wd0.1-do0.1-seed2",
+        "wall_seconds": 163.32859826087952,
+        "result": {
+          "best_val_loss": 0.0046465564921328965,
+          "best_ratio_vs_identity": 0.7517549047725874,
+          "val_identity": 0.006180946027267386,
+          "epochs": 15,
+          "seed": 2,
+          "best_epoch": 8,
+          "still_improving": false,
+          "epoch_seconds_mean": 9.887676111857097,
+          "train_seconds": 148.31514167785645,
+          "checkpoint": "/root/c3/results/campaign/c3_real/A_seeds/res-lr0.0001-L6-wd0.1-do0.1-seed2/predictor.pt"
+        }
+      }
+    ],
+    "D_cem": [
+      {
+        "name": "it3-cosine-H2-N300",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "n_iter": 3,
+          "cost": "cosine",
+          "horizon": 2,
+          "n_samples": 300
+        },
+        "dir": "/root/c3/results/campaign/c3_real/D_cem/it3-cosine-H2-N300",
+        "wall_seconds": 31.82760715484619,
+        "result": {
+          "name": "cem-H2-N300-it3-cosine",
+          "horizon": 2,
+          "frameskip": 5,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.5611702539026737,
+          "mae_seq": 0.6144003504887223,
+          "mae_first_ratio": 1.1555233756042875,
+          "mae_seq_ratio": 1.264967944354387,
+          "mae_first_deg": 4.360934544354677,
+          "final_cost": 0.004723162390291691,
+          "ms_per_plan": 324.26974549889565,
+          "checkpoint": "/root/c3/results/campaign/c3_real/best_predictor.pt"
+        }
+      },
+      {
+        "name": "it3-cosine-H2-N1000",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "n_iter": 3,
+          "cost": "cosine",
+          "horizon": 2,
+          "n_samples": 1000
+        },
+        "dir": "/root/c3/results/campaign/c3_real/D_cem/it3-cosine-H2-N1000",
+        "wall_seconds": 78.35188817977905,
+        "result": {
+          "name": "cem-H2-N1000-it3-cosine",
+          "horizon": 2,
+          "frameskip": 5,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.5568148926831782,
+          "mae_seq": 0.6051099081523716,
+          "mae_first_ratio": 1.1465551138988117,
+          "mae_seq_ratio": 1.2458401692237115,
+          "mae_first_deg": 4.329641213640571,
+          "final_cost": 0.00466306135058403,
+          "ms_per_plan": 1059.2893324792385,
+          "checkpoint": "/root/c3/results/campaign/c3_real/best_predictor.pt"
+        }
+      },
+      {
+        "name": "it3-cosine-H4-N300",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "n_iter": 3,
+          "cost": "cosine",
+          "horizon": 4,
+          "n_samples": 300
+        },
+        "dir": "/root/c3/results/campaign/c3_real/D_cem/it3-cosine-H4-N300",
+        "wall_seconds": 51.549617528915405,
+        "result": {
+          "name": "cem-H4-N300-it3-cosine",
+          "horizon": 4,
+          "frameskip": 5,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.5451380044687539,
+          "mae_seq": 0.5909344586543739,
+          "mae_first_ratio": 1.1760218564707228,
+          "mae_seq_ratio": 1.1767749927483373,
+          "mae_first_deg": 4.061707386747003,
+          "final_cost": 0.005796413868665695,
+          "ms_per_plan": 638.3617557585239,
+          "checkpoint": "/root/c3/results/campaign/c3_real/best_predictor.pt"
+        }
+      },
+      {
+        "name": "it3-cosine-H4-N1000",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "n_iter": 3,
+          "cost": "cosine",
+          "horizon": 4,
+          "n_samples": 1000
+        },
+        "dir": "/root/c3/results/campaign/c3_real/D_cem/it3-cosine-H4-N1000",
+        "wall_seconds": 144.74055123329163,
+        "result": {
+          "name": "cem-H4-N1000-it3-cosine",
+          "horizon": 4,
+          "frameskip": 5,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.520368670928292,
+          "mae_seq": 0.5539203404914588,
+          "mae_first_ratio": 1.1225871713542748,
+          "mae_seq_ratio": 1.1030658224759935,
+          "mae_first_deg": 3.833769341930747,
+          "final_cost": 0.005627168342471123,
+          "ms_per_plan": 2095.1011553406715,
+          "checkpoint": "/root/c3/results/campaign/c3_real/best_predictor.pt"
+        }
+      }
+    ]
+  },
+  "failures": [],
+  "epoch_seconds": {
+    "6": [
+      9.812143834431966,
+      9.807909679412841,
+      9.797081120808919,
+      9.803102970123291,
+      9.806855662663777,
+      9.887676111857097
+    ],
+    "4": [
+      6.860594908396403,
+      6.857560952504476
+    ]
+  }
+}

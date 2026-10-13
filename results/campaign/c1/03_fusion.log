@@ -1,0 +1,222 @@
+
+$ /root/LeWM-Robot/.venv/bin/python /root/LeWM-Robot/scripts/03_compare_fusion.py --config configs/rtx4090.yaml --encoded-data results/encoded/encoded_data.pt --wandb-group c1-03
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+============================================================
+TEST 3 : Comparaison des stratégies de fusion multi-camera
+============================================================
+[Precision] autocast: torch.bfloat16
+[Data] 15.80 GB de latents hébergés sur cuda — aucun transfert CPU→GPU pendant le training.
+
+Données chargées :
+  N paires       : 34956
+  Num patches    : 196
+  Embed dim      : 384
+  Action dim     : 6
+
+Split : 27922 train (12710 augmentés) / 3833 val (0 augmenté) — épisodes : 32 train / 8 val
+MAE ci-dessous en espace normalisé (1.0 = un écart-type de l'articulation)
+
+────────────────────────────────────────────────────────────
+Stratégie : concat
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 0
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /root/.netrc.
+wandb: Currently logged in as: kamil-akeramou (kamil-akeramou-poc) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Using an existing wandb-core service via WANDB_SERVICE.
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run tmnmev4f
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_105236-tmnmev4f
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-concat
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/tmnmev4f
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/tmnmev4f
+  epoch   1/30  train MAE=0.29939  val MAE=0.24946  [2.9s/epoch]
+  epoch  10/30  train MAE=0.13298  val MAE=0.19571  [1.5s/epoch]
+  epoch  20/30  train MAE=0.10850  val MAE=0.18755  [2.0s/epoch]
+  epoch  30/30  train MAE=0.09480  val MAE=0.19697  [2.5s/epoch]
+  VRAM pic : 15.89 GB
+wandb: updating run metadata
+wandb: uploading history steps 24-29, summary, console lines 4-5
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁▁▁▂▂▂▂▃▃▃▃▄▄▄▄▅▅▅▅▆▆▆▆▇▇▇▇███
+wandb: perf/epoch_seconds █▇▄▆▇▇▆▇▆▁▁▁▁▆▆▄▆▆▆▃▁▆▅▆▇▆▇▅▅▆
+wandb:          train/mae █▅▄▄▃▃▃▃▂▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁
+wandb:            val/mae █▇▃▃▄▃▂▂▃▂▂▂▂▁▂▂▂▃▃▁▂▂▃▂▂▃▂▂▁▂
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.18427
+wandb:              epoch 29
+wandb:    final_train_mae 0.0948
+wandb:      final_val_mae 0.19697
+wandb:      output_tokens 392
+wandb:       peak_vram_gb 15.89195
+wandb: perf/epoch_seconds 2.50198
+wandb:          train/mae 0.0948
+wandb:            val/mae 0.19697
+wandb: 
+wandb: 🚀 View run fusion-concat at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/tmnmev4f
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_105236-tmnmev4f/logs
+
+────────────────────────────────────────────────────────────
+Stratégie : concat_view
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 768
+wandb: setting up run mhwarxsr
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_105349-mhwarxsr
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-concat_view
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/mhwarxsr
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/mhwarxsr
+  epoch   1/30  train MAE=0.29404  val MAE=0.24763  [2.6s/epoch]
+  epoch  10/30  train MAE=0.12218  val MAE=0.19542  [1.8s/epoch]
+  epoch  20/30  train MAE=0.09622  val MAE=0.19811  [2.7s/epoch]
+  epoch  30/30  train MAE=0.08396  val MAE=0.19235  [2.7s/epoch]
+  VRAM pic : 15.90 GB
+wandb: updating run metadata
+wandb: uploading history steps 27-29, summary, console lines 4-5
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁▁▁▂▂▂▂▃▃▃▃▄▄▄▄▅▅▅▅▆▆▆▆▇▇▇▇███
+wandb: perf/epoch_seconds ▆█▇▇▂▄▁▂▅▁▇▇▄▆▆█▆▆▃▆▆█▅▇▆▇▇▇▅▆
+wandb:          train/mae █▅▄▄▃▃▃▃▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:            val/mae █▅▃▃▃▂▂▂▃▂▂▂▂▂▁▂▂▂▂▂▁▂▁▁▂▂▂▂▂▂
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.18621
+wandb:              epoch 29
+wandb:    final_train_mae 0.08396
+wandb:      final_val_mae 0.19235
+wandb:      output_tokens 392
+wandb:       peak_vram_gb 15.9016
+wandb: perf/epoch_seconds 2.67546
+wandb:          train/mae 0.08396
+wandb:            val/mae 0.19235
+wandb: 
+wandb: 🚀 View run fusion-concat_view at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/mhwarxsr
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_105349-mhwarxsr/logs
+
+────────────────────────────────────────────────────────────
+Stratégie : cross_attn_bd
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 1,184,256
+wandb: setting up run 5iqbgdwz
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_105511-5iqbgdwz
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-cross_attn_bd
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/5iqbgdwz
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/5iqbgdwz
+  epoch   1/30  train MAE=0.21136  val MAE=0.17551  [7.6s/epoch]
+  epoch  10/30  train MAE=0.08909  val MAE=0.14103  [7.4s/epoch]
+  epoch  20/30  train MAE=0.07327  val MAE=0.15292  [7.4s/epoch]
+  epoch  30/30  train MAE=0.06486  val MAE=0.16439  [7.7s/epoch]
+  VRAM pic : 16.02 GB
+wandb: updating run metadata
+wandb: uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading output.log; uploading config.yaml
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁▁▁▂▂▂▂▃▃▃▃▄▄▄▄▅▅▅▅▆▆▆▆▇▇▇▇███
+wandb: perf/epoch_seconds ▇▅▅▆▂▃▅▆▆▅▃▅▁▆▅▆▃▃▅▅▄▄▄▆▇▆▆▅▇█
+wandb:          train/mae █▄▄▃▃▃▃▂▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:            val/mae █▃▃▄▄▄▄▂▃▁▁▃▄▃▂▃▆▄▆▃▃▃▂▄▅▃▅▅▄▆
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.14084
+wandb:              epoch 29
+wandb:    final_train_mae 0.06486
+wandb:      final_val_mae 0.16439
+wandb:      output_tokens 392
+wandb:       peak_vram_gb 16.01524
+wandb: perf/epoch_seconds 7.69545
+wandb:          train/mae 0.06486
+wandb:            val/mae 0.16439
+wandb: 
+wandb: 🚀 View run fusion-cross_attn_bd at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/5iqbgdwz
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_105511-5iqbgdwz/logs
+
+────────────────────────────────────────────────────────────
+Stratégie : late_cls
+────────────────────────────────────────────────────────────
+[Config] Seed set to 42
+Paramètres fusion : 1,181,056
+wandb: setting up run bnhb5fzv
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_105856-bnhb5fzv
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run fusion-late_cls
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/bnhb5fzv
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/bnhb5fzv
+  epoch   1/30  train MAE=0.25454  val MAE=0.21491  [3.6s/epoch]
+  epoch  10/30  train MAE=0.10600  val MAE=0.20172  [3.5s/epoch]
+  epoch  20/30  train MAE=0.08782  val MAE=0.20683  [3.6s/epoch]
+  epoch  30/30  train MAE=0.07737  val MAE=0.19362  [3.4s/epoch]
+  VRAM pic : 15.89 GB
+wandb: updating run metadata
+wandb: uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading config.yaml
+wandb: 
+wandb: Run history:
+wandb:              epoch ▁▁▁▂▂▂▂▃▃▃▃▄▄▄▄▅▅▅▅▆▆▆▆▇▇▇▇███
+wandb: perf/epoch_seconds █▇▇▅▅▄▃▄▇▇▁█▇▄▅▇▃▇██▇▇▇▇▇▇█▇▇▇
+wandb:          train/mae █▅▄▃▃▃▃▂▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:            val/mae ██▂▅▁▁▃▆▄▅▅▂▄▂▅▅▆▃▇▆▄▄▁▃▂▂▃▄▄▃
+wandb: 
+wandb: Run summary:
+wandb:       best_val_mae 0.18714
+wandb:              epoch 29
+wandb:    final_train_mae 0.07737
+wandb:      final_val_mae 0.19362
+wandb:      output_tokens 1
+wandb:       peak_vram_gb 15.89318
+wandb: perf/epoch_seconds 3.41491
+wandb:          train/mae 0.07737
+wandb:            val/mae 0.19362
+wandb: 
+wandb: 🚀 View run fusion-late_cls at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/bnhb5fzv
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_105856-bnhb5fzv/logs
+
+============================================================
+RÉSULTATS COMPARATIFS
+============================================================
+Stratégie              Params   Tokens    Train MAE      Val MAE
+--------------------------------------------------------------
+concat                      0      392      0.09480      0.18427
+concat_view               768      392      0.08396      0.18621
+cross_attn_bd       1,184,256      392      0.06486      0.14084  << gagnante
+late_cls            1,181,056        1      0.07737      0.18714
+
+Résultats sauvés dans : /root/LeWM-Robot/results/fusion_comparison.json
+Plot sauvé dans       : /root/LeWM-Robot/results/fusion_comparison.png
+
+Pour le predictor : python scripts/04_train_predictor.py --encoded-data /root/LeWM-Robot/results/encoded/encoded_data.pt --fusion cross_attn_bd

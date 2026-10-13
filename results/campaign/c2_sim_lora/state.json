@@ -1,0 +1,891 @@
+{
+  "results": {
+    "A_screen": [
+      {
+        "name": "L6-wd0.01-do0.1-lr3e-05-abs",
+        "params": {
+          "batch_size": 64,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1,
+          "lr": 3e-05,
+          "residual": false
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr3e-05-abs",
+        "wall_seconds": 444.77772521972656,
+        "result": {
+          "best_val_loss": 0.026267230078972727,
+          "best_ratio_vs_identity": 44.31128253569704,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 14,
+          "still_improving": true,
+          "epoch_seconds_mean": 28.55667405128479,
+          "train_seconds": 428.35011076927185,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr3e-05-abs/predictor.pt"
+        }
+      },
+      {
+        "name": "L6-wd0.01-do0.1-lr3e-05-res",
+        "params": {
+          "batch_size": 64,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1,
+          "lr": 3e-05,
+          "residual": true
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr3e-05-res",
+        "wall_seconds": 449.45920181274414,
+        "result": {
+          "best_val_loss": 0.0005132313634394992,
+          "best_ratio_vs_identity": 0.8657913256622322,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 13,
+          "still_improving": true,
+          "epoch_seconds_mean": 28.887136268615723,
+          "train_seconds": 433.30704402923584,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr3e-05-res/predictor.pt"
+        }
+      },
+      {
+        "name": "L6-wd0.01-do0.1-lr0.0001-abs",
+        "params": {
+          "batch_size": 64,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1,
+          "lr": 0.0001,
+          "residual": false
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0001-abs",
+        "wall_seconds": 445.34169244766235,
+        "result": {
+          "best_val_loss": 0.0009134098450307863,
+          "best_ratio_vs_identity": 1.540869044522768,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 14,
+          "still_improving": true,
+          "epoch_seconds_mean": 28.595848162968952,
+          "train_seconds": 428.9377224445343,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0001-abs/predictor.pt"
+        }
+      },
+      {
+        "name": "L6-wd0.01-do0.1-lr0.0001-res",
+        "params": {
+          "batch_size": 64,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1,
+          "lr": 0.0001,
+          "residual": true
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0001-res",
+        "wall_seconds": 452.5838279724121,
+        "result": {
+          "best_val_loss": 0.0005060325187610906,
+          "best_ratio_vs_identity": 0.8536472952670777,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 13,
+          "still_improving": true,
+          "epoch_seconds_mean": 28.886241515477497,
+          "train_seconds": 433.2936227321625,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0001-res/predictor.pt"
+        }
+      },
+      {
+        "name": "L6-wd0.01-do0.1-lr0.0003-abs",
+        "params": {
+          "batch_size": 64,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1,
+          "lr": 0.0003,
+          "residual": false
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0003-abs",
+        "wall_seconds": 443.96053409576416,
+        "result": {
+          "best_val_loss": 0.0005369991313092509,
+          "best_ratio_vs_identity": 0.9058861614767827,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 14,
+          "still_improving": true,
+          "epoch_seconds_mean": 28.576124159495034,
+          "train_seconds": 428.64186239242554,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0003-abs/predictor.pt"
+        }
+      },
+      {
+        "name": "L6-wd0.01-do0.1-lr0.0003-res",
+        "params": {
+          "batch_size": 64,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1,
+          "lr": 0.0003,
+          "residual": true
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0003-res",
+        "wall_seconds": 449.9857130050659,
+        "result": {
+          "best_val_loss": 0.0005053127112617988,
+          "best_ratio_vs_identity": 0.8524330220690077,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 15,
+          "seed": 42,
+          "best_epoch": 13,
+          "still_improving": true,
+          "epoch_seconds_mean": 28.982069063186646,
+          "train_seconds": 434.7310359477997,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0003-res/predictor.pt"
+        }
+      }
+    ],
+    "B_regul": [
+      {
+        "name": "lr0.0003-res-L6-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0003,
+          "residual": true,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0003-res-L6-wd0.01-do0.1",
+        "wall_seconds": 884.4040594100952,
+        "result": {
+          "best_val_loss": 0.0005052543168352448,
+          "best_ratio_vs_identity": 0.8523345140829824,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 42,
+          "best_epoch": 21,
+          "still_improving": false,
+          "epoch_seconds_mean": 28.87741866906484,
+          "train_seconds": 866.3225600719452,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0003-res-L6-wd0.01-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "lr0.0003-res-L6-wd0.1-do0.1",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0003,
+          "residual": true,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0003-res-L6-wd0.1-do0.1",
+        "wall_seconds": 884.2712507247925,
+        "result": {
+          "best_val_loss": 0.0005035610554010502,
+          "best_ratio_vs_identity": 0.849478080968725,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 42,
+          "best_epoch": 21,
+          "still_improving": false,
+          "epoch_seconds_mean": 28.866639184951783,
+          "train_seconds": 865.9991755485535,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0003-res-L6-wd0.1-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "lr0.0003-res-L4-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0003,
+          "residual": true,
+          "n_layers": 4,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0003-res-L4-wd0.01-do0.1",
+        "wall_seconds": 626.4257946014404,
+        "result": {
+          "best_val_loss": 0.0005039727402618155,
+          "best_ratio_vs_identity": 0.8501725692770161,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 42,
+          "best_epoch": 18,
+          "still_improving": false,
+          "epoch_seconds_mean": 20.336266255378725,
+          "train_seconds": 610.0879876613617,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0003-res-L4-wd0.01-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "lr0.0001-res-L6-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0001,
+          "residual": true,
+          "n_layers": 6,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L6-wd0.01-do0.1",
+        "wall_seconds": 889.7169666290283,
+        "result": {
+          "best_val_loss": 0.0005011587786401116,
+          "best_ratio_vs_identity": 0.8454255804209759,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 42,
+          "best_epoch": 23,
+          "still_improving": false,
+          "epoch_seconds_mean": 29.052450799942015,
+          "train_seconds": 871.5735239982605,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L6-wd0.01-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "lr0.0001-res-L6-wd0.1-do0.1",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0001,
+          "residual": true,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L6-wd0.1-do0.1",
+        "wall_seconds": 1011.2791335582733,
+        "result": {
+          "best_val_loss": 0.0005010390935703921,
+          "best_ratio_vs_identity": 0.8452236787007069,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 42,
+          "best_epoch": 23,
+          "still_improving": false,
+          "epoch_seconds_mean": 33.08989273707072,
+          "train_seconds": 992.6967821121216,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L6-wd0.1-do0.1/predictor.pt"
+        }
+      },
+      {
+        "name": "lr0.0001-res-L4-wd0.01-do0.1",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0001,
+          "residual": true,
+          "n_layers": 4,
+          "weight_decay": 0.01,
+          "dropout": 0.1
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L4-wd0.01-do0.1",
+        "wall_seconds": 620.077760219574,
+        "result": {
+          "best_val_loss": 0.0005018880905638239,
+          "best_ratio_vs_identity": 0.8466558870277673,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 42,
+          "best_epoch": 20,
+          "still_improving": false,
+          "epoch_seconds_mean": 20.14043284257253,
+          "train_seconds": 604.2129852771759,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_regul/lr0.0001-res-L4-wd0.01-do0.1/predictor.pt"
+        }
+      }
+    ],
+    "B_seeds": [
+      {
+        "name": "lr0.0001-res-L6-wd0.1-do0.1-seed1",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0001,
+          "residual": true,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1,
+          "seed": 1
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_seeds/lr0.0001-res-L6-wd0.1-do0.1-seed1",
+        "wall_seconds": 1098.9818179607391,
+        "result": {
+          "best_val_loss": 0.0005039232163358517,
+          "best_ratio_vs_identity": 0.8500890253072462,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 1,
+          "best_epoch": 20,
+          "still_improving": false,
+          "epoch_seconds_mean": 36.00699241956075,
+          "train_seconds": 1080.2097725868225,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_seeds/lr0.0001-res-L6-wd0.1-do0.1-seed1/predictor.pt"
+        }
+      },
+      {
+        "name": "lr0.0001-res-L6-wd0.1-do0.1-seed2",
+        "params": {
+          "batch_size": 64,
+          "lr": 0.0001,
+          "residual": true,
+          "n_layers": 6,
+          "weight_decay": 0.1,
+          "dropout": 0.1,
+          "seed": 2
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/B_seeds/lr0.0001-res-L6-wd0.1-do0.1-seed2",
+        "wall_seconds": 885.1277475357056,
+        "result": {
+          "best_val_loss": 0.000504148865175674,
+          "best_ratio_vs_identity": 0.8504696817169687,
+          "val_identity": 0.0005927887566290126,
+          "epochs": 30,
+          "seed": 2,
+          "best_epoch": 19,
+          "still_improving": false,
+          "epoch_seconds_mean": 28.89947375456492,
+          "train_seconds": 866.9842126369476,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/B_seeds/lr0.0001-res-L6-wd0.1-do0.1-seed2/predictor.pt"
+        }
+      }
+    ],
+    "C_lora": [
+      {
+        "name": "lr0.0001-r4",
+        "params": {
+          "batch_size": 32,
+          "action_stats": "real",
+          "train_action_embed": true,
+          "lr": 0.0001,
+          "lora_rank": 4,
+          "lora_alpha": 8
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0001-r4",
+        "wall_seconds": 749.4555125236511,
+        "result": {
+          "best_val_loss": 0.0027758284981246107,
+          "best_ratio_vs_identity": 0.8990042336744843,
+          "epochs": 20,
+          "best_epoch": 14,
+          "epoch_seconds_mean": 36.87640384810511,
+          "train_seconds": 737.5280769621022,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0001-r4/predictor_real.pt"
+        }
+      },
+      {
+        "name": "lr0.0001-r8",
+        "params": {
+          "batch_size": 32,
+          "action_stats": "real",
+          "train_action_embed": true,
+          "lr": 0.0001,
+          "lora_rank": 8,
+          "lora_alpha": 16
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0001-r8",
+        "wall_seconds": 765.8832385540009,
+        "result": {
+          "best_val_loss": 0.0027644961218660077,
+          "best_ratio_vs_identity": 0.895334030619447,
+          "epochs": 20,
+          "best_epoch": 14,
+          "epoch_seconds_mean": 37.67566294359276,
+          "train_seconds": 753.5132588718552,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0001-r8/predictor_real.pt"
+        }
+      },
+      {
+        "name": "lr0.0001-r16",
+        "params": {
+          "batch_size": 32,
+          "action_stats": "real",
+          "train_action_embed": true,
+          "lr": 0.0001,
+          "lora_rank": 16,
+          "lora_alpha": 32
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0001-r16",
+        "wall_seconds": 759.0439836978912,
+        "result": {
+          "best_val_loss": 0.0027393325275625103,
+          "best_ratio_vs_identity": 0.887184327628576,
+          "epochs": 20,
+          "best_epoch": 10,
+          "epoch_seconds_mean": 37.30145447804826,
+          "train_seconds": 746.0290895609651,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0001-r16/predictor_real.pt"
+        }
+      },
+      {
+        "name": "lr0.0005-r4",
+        "params": {
+          "batch_size": 32,
+          "action_stats": "real",
+          "train_action_embed": true,
+          "lr": 0.0005,
+          "lora_rank": 4,
+          "lora_alpha": 8
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r4",
+        "wall_seconds": 752.2996821403503,
+        "result": {
+          "best_val_loss": 0.0027373455193204182,
+          "best_ratio_vs_identity": 0.8865407976615072,
+          "epochs": 20,
+          "best_epoch": 10,
+          "epoch_seconds_mean": 37.04028947054176,
+          "train_seconds": 740.8057894108351,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r4/predictor_real.pt"
+        }
+      },
+      {
+        "name": "lr0.0005-r8",
+        "params": {
+          "batch_size": 32,
+          "action_stats": "real",
+          "train_action_embed": true,
+          "lr": 0.0005,
+          "lora_rank": 8,
+          "lora_alpha": 16
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r8",
+        "wall_seconds": 737.7851946353912,
+        "result": {
+          "best_val_loss": 0.0027517416237969883,
+          "best_ratio_vs_identity": 0.8912032466858617,
+          "epochs": 20,
+          "best_epoch": 6,
+          "epoch_seconds_mean": 36.31297803325579,
+          "train_seconds": 726.2595606651157,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r8/predictor_real.pt"
+        }
+      },
+      {
+        "name": "lr0.0005-r16",
+        "params": {
+          "batch_size": 32,
+          "action_stats": "real",
+          "train_action_embed": true,
+          "lr": 0.0005,
+          "lora_rank": 16,
+          "lora_alpha": 32
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r16",
+        "wall_seconds": 707.9444761276245,
+        "result": {
+          "best_val_loss": 0.0027222201878127333,
+          "best_ratio_vs_identity": 0.8816421747565526,
+          "epochs": 20,
+          "best_epoch": 5,
+          "epoch_seconds_mean": 34.80302712884732,
+          "train_seconds": 696.0605425769463,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/C_lora/lr0.0005-r16/predictor_real.pt"
+        }
+      }
+    ],
+    "D_cem": [
+      {
+        "name": "H5-N300-it3-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 5,
+          "n_samples": 300,
+          "n_iter": 3,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H5-N300-it3-cosine",
+        "wall_seconds": 83.36574268341064,
+        "result": {
+          "name": "cem-H5-N300-it3-cosine",
+          "horizon": 5,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.746120483148843,
+          "mae_seq": 0.7040184130892158,
+          "mae_first_ratio": 1.135757167570305,
+          "mae_seq_ratio": 1.0669565143309045,
+          "mae_first_deg": 26.406235709786415,
+          "final_cost": 0.005403955467045307,
+          "ms_per_plan": 1128.7657879292965,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H5-N300-it5-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 5,
+          "n_samples": 300,
+          "n_iter": 5,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H5-N300-it5-cosine",
+        "wall_seconds": 131.7747676372528,
+        "result": {
+          "name": "cem-H5-N300-it5-cosine",
+          "horizon": 5,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 5,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.7574457954615355,
+          "mae_seq": 0.7448627059347928,
+          "mae_first_ratio": 1.1529967487433455,
+          "mae_seq_ratio": 1.128857003742259,
+          "mae_first_deg": 26.47020162642002,
+          "final_cost": 0.005299140699207783,
+          "ms_per_plan": 1879.20343875885,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H5-N1000-it3-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 5,
+          "n_samples": 1000,
+          "n_iter": 3,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H5-N1000-it3-cosine",
+        "wall_seconds": 249.70698237419128,
+        "result": {
+          "name": "cem-H5-N1000-it3-cosine",
+          "horizon": 5,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.7116114837117493,
+          "mae_seq": 0.6835694420151412,
+          "mae_first_ratio": 1.083226987335942,
+          "mae_seq_ratio": 1.0359656162333526,
+          "mae_first_deg": 25.038247533142567,
+          "final_cost": 0.00536735262721777,
+          "ms_per_plan": 3730.3308360278606,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H5-N1000-it5-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 5,
+          "n_samples": 1000,
+          "n_iter": 5,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H5-N1000-it5-cosine",
+        "wall_seconds": 408.31083130836487,
+        "result": {
+          "name": "cem-H5-N1000-it5-cosine",
+          "horizon": 5,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 5,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.7543277875520289,
+          "mae_seq": 0.7246416243724525,
+          "mae_first_ratio": 1.1482504645818148,
+          "mae_seq_ratio": 1.0982114775761393,
+          "mae_first_deg": 26.093906112015247,
+          "final_cost": 0.005272704176604748,
+          "ms_per_plan": 6215.496752411127,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H10-N300-it3-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 10,
+          "n_samples": 300,
+          "n_iter": 3,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H10-N300-it3-cosine",
+        "wall_seconds": 155.03859615325928,
+        "result": {
+          "name": "cem-H10-N300-it3-cosine",
+          "horizon": 10,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.6830868613906205,
+          "mae_seq": 0.6692097722552717,
+          "mae_first_ratio": 1.0037384199212767,
+          "mae_seq_ratio": 0.9868830189002646,
+          "mae_first_deg": 24.62049424648285,
+          "final_cost": 0.007784075103700161,
+          "ms_per_plan": 2249.3590638041496,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H10-N300-it5-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 10,
+          "n_samples": 300,
+          "n_iter": 5,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H10-N300-it5-cosine",
+        "wall_seconds": 250.902184009552,
+        "result": {
+          "name": "cem-H10-N300-it5-cosine",
+          "horizon": 10,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 5,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.6897733842488378,
+          "mae_seq": 0.6878975150175393,
+          "mae_first_ratio": 1.0135637002301547,
+          "mae_seq_ratio": 1.0144418154962942,
+          "mae_first_deg": 24.563454411923885,
+          "final_cost": 0.007581630721688271,
+          "ms_per_plan": 3748.334739357233,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H10-N1000-it3-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 10,
+          "n_samples": 1000,
+          "n_iter": 3,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H10-N1000-it3-cosine",
+        "wall_seconds": 487.29469442367554,
+        "result": {
+          "name": "cem-H10-N1000-it3-cosine",
+          "horizon": 10,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.6627503102645278,
+          "mae_seq": 0.6490573468618095,
+          "mae_first_ratio": 0.9738555765411582,
+          "mae_seq_ratio": 0.9571642562117905,
+          "mae_first_deg": 23.69115498661995,
+          "final_cost": 0.007717312313616276,
+          "ms_per_plan": 7438.30307200551,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H10-N1000-it5-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 10,
+          "n_samples": 1000,
+          "n_iter": 5,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H10-N1000-it5-cosine",
+        "wall_seconds": 803.9103348255157,
+        "result": {
+          "name": "cem-H10-N1000-it5-cosine",
+          "horizon": 10,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 5,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.6767289363779128,
+          "mae_seq": 0.6627448373474181,
+          "mae_first_ratio": 0.9943959863788696,
+          "mae_seq_ratio": 0.9773491854994838,
+          "mae_first_deg": 24.07952654361725,
+          "final_cost": 0.007537159137427807,
+          "ms_per_plan": 12393.808990716934,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H20-N300-it3-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 20,
+          "n_samples": 300,
+          "n_iter": 3,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H20-N300-it3-cosine",
+        "wall_seconds": 297.5583493709564,
+        "result": {
+          "name": "cem-H20-N300-it3-cosine",
+          "horizon": 20,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.717985128518194,
+          "mae_seq": 0.697196957655251,
+          "mae_first_ratio": 1.0858579555500492,
+          "mae_seq_ratio": 1.0365237554937698,
+          "mae_first_deg": 26.129405856132507,
+          "final_cost": 0.010269742459058762,
+          "ms_per_plan": 4486.613009124994,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H20-N300-it5-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 20,
+          "n_samples": 300,
+          "n_iter": 5,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H20-N300-it5-cosine",
+        "wall_seconds": 489.5833523273468,
+        "result": {
+          "name": "cem-H20-N300-it5-cosine",
+          "horizon": 20,
+          "n_samples": 300,
+          "n_elites": 30,
+          "n_iter": 5,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.7272179210558534,
+          "mae_seq": 0.7076397323980927,
+          "mae_first_ratio": 1.0998213383984539,
+          "mae_seq_ratio": 1.0520490442595567,
+          "mae_first_deg": 26.232888773083687,
+          "final_cost": 0.009860832244157791,
+          "ms_per_plan": 7475.3031097352505,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H20-N1000-it3-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 20,
+          "n_samples": 1000,
+          "n_iter": 3,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H20-N1000-it3-cosine",
+        "wall_seconds": 961.1404728889465,
+        "result": {
+          "name": "cem-H20-N1000-it3-cosine",
+          "horizon": 20,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 3,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.6957223261706531,
+          "mae_seq": 0.6706850798800588,
+          "mae_first_ratio": 1.0521883987838703,
+          "mae_seq_ratio": 0.9971085073131798,
+          "mae_first_deg": 25.363233774900436,
+          "final_cost": 0.010171543806791306,
+          "ms_per_plan": 14851.06747224927,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      },
+      {
+        "name": "H20-N1000-it5-cosine",
+        "params": {
+          "n_starts": 64,
+          "rollout_chunk": 500,
+          "horizon": 20,
+          "n_samples": 1000,
+          "n_iter": 5,
+          "cost": "cosine"
+        },
+        "dir": "/root/c2/results/campaign/c2_sim_lora/D_cem/H20-N1000-it5-cosine",
+        "wall_seconds": 1594.917653799057,
+        "result": {
+          "name": "cem-H20-N1000-it5-cosine",
+          "horizon": 20,
+          "n_samples": 1000,
+          "n_elites": 100,
+          "n_iter": 5,
+          "cost": "cosine",
+          "initial_std": 1.0,
+          "n_starts": 64,
+          "mae_first": 0.715261893812567,
+          "mae_seq": 0.6693949471227825,
+          "mae_first_ratio": 1.0817394216800817,
+          "mae_seq_ratio": 0.9951904650211496,
+          "mae_first_deg": 26.16263721883297,
+          "final_cost": 0.009750140830874443,
+          "ms_per_plan": 24750.339318066835,
+          "checkpoint": "/root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt"
+        }
+      }
+    ]
+  },
+  "failures": [],
+  "epoch_seconds": {
+    "6": [
+      28.55667405128479,
+      28.887136268615723,
+      28.595848162968952,
+      28.886241515477497,
+      28.576124159495034,
+      28.982069063186646,
+      28.87741866906484,
+      28.866639184951783,
+      29.052450799942015,
+      33.08989273707072,
+      36.00699241956075,
+      28.89947375456492
+    ],
+    "4": [
+      20.336266255378725,
+      20.14043284257253
+    ]
+  }
+}

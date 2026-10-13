@@ -1,0 +1,50 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+============================================================
+TEST 1 : Chargement et encodage de l'encodeur
+============================================================
+[DINOv3Encoder] Loading facebook/dinov3-vits16-pretrain-lvd1689m on cuda (bfloat16)...
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 3481.37it/s]
+[DINOv3Encoder] Loaded. embed_dim=384, num_patches=196, patch_size=16, register_tokens=4, attn=sdpa
+
+Device utilisé : cuda  |  dtype poids : torch.bfloat16
+Embed dim      : 384
+Num patches    : 196 (patch_size réel : 16)
+Register tokens: 4
+
+--- Test encodage batch dummy (B=64) ---
+Input  : (64, 3, 224, 224)
+Output : (64, 196, 384) torch.float32
+Time   : 14.8 ms/batch  (0.23 ms/image, 4310.8 img/s)
+
+--- Test extraction CLS ---
+Patches : (64, 196, 384)
+CLS     : (64, 384)
+
+--- Test avec image uint8 ---
+Input  : (2, 3, 224, 224) (torch.uint8)
+Output : (2, 196, 384)  |  max |uint8 - float| = 0.00e+00
+
+--- Précision réduite vs fp32 ---
+[DINOv3Encoder] Loading facebook/dinov3-vits16-pretrain-lvd1689m on cuda (float32)...
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 5139.87it/s]
+[DINOv3Encoder] Loaded. embed_dim=384, num_patches=196, patch_size=16, register_tokens=4, attn=sdpa
+cos(bf16, fp32) : min=0.99976 mean=0.99983  (attendu > 0.99)
+Débit           : torch.bfloat16 4310.8 img/s  vs fp32 2139.8 img/s  (x2.0)
+VRAM pic        : 0.44 GB
+
+[OK] L'encodeur fonctionne correctement.
+
+Prochaine étape : encoder le dataset
+  python scripts/02_encode_dataset.py

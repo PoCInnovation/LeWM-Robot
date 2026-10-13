@@ -1,0 +1,9 @@
+{
+  "best_val_loss": 0.0047582204703566265,
+  "best_ratio_vs_identity": 0.7867649760905324,
+  "epochs": 20,
+  "best_epoch": 5,
+  "epoch_seconds_mean": 13.845320545241702,
+  "train_seconds": 276.90641090483405,
+  "checkpoint": "/root/c3/results/campaign/c3_sim/C_lora/lr0.0005-r16/predictor_real.pt"
+}

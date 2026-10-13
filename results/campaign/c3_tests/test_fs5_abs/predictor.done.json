@@ -1,0 +1,12 @@
+{
+  "best_val_loss": 0.0048127502372319044,
+  "best_ratio_vs_identity": 0.7786429805405751,
+  "val_identity": 0.006180946027267386,
+  "epochs": 8,
+  "seed": 42,
+  "best_epoch": 5,
+  "still_improving": true,
+  "epoch_seconds_mean": 25.7757368683815,
+  "train_seconds": 206.205894947052,
+  "checkpoint": "/root/c3/results/test_fs5_abs/predictor.pt"
+}

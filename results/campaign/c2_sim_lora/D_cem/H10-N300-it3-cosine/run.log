@@ -1,0 +1,45 @@
+
+$ /root/c2/.venv/bin/python /root/c2/scripts/08_eval_planner.py --config configs/rtx4090.yaml --encoded-data results/encoded/encoded_data.pt --predictor-ckpt /root/c2/results/campaign/c2_sim_lora/best_predictor_real.pt --output /root/c2/results/campaign/c2_sim_lora/D_cem/H10-N300-it3-cosine/cem_eval.json --n-starts 64 --rollout-chunk 500 --horizon 10 --n-samples 300 --n-iter 3 --cost cosine --wandb-group c2_sim_lora-D_cem --wandb-name D_cem-H10-N300-it3-cosine
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+
+[LoRA] 24 couches adaptées.
+[LoRA] Params LoRA ajoutés    : 294,912
+[LoRA] Params base couverts   : 3,548,160
+[LoRA] Ratio compression      : 8.31%
+[Eval CEM] cem-H10-N300-it3-cosine — 64 départs (épisodes de val), checkpoint best_predictor_real.pt
+[Eval CEM] MAE 1er pas 0.683 (ratio vs action moyenne 1.004, ~24.6°)  séquence 0.669 (ratio 0.987)  2249 ms/plan  → /root/c2/results/campaign/c2_sim_lora/D_cem/H10-N300-it3-cosine/cem_eval.json
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /root/.netrc.
+wandb: Currently logged in as: kamil-akeramou (kamil-akeramou-poc) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Using an existing wandb-core service via WANDB_SERVICE.
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run 096129fa83755c68
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/c2/results/wandb/run-20261013_182817-096129fa83755c68
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run D_cem-H10-N300-it3-cosine
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/096129fa83755c68
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/096129fa83755c68
+wandb: updating run metadata; uploading data
+wandb: uploading wandb-metadata.json; uploading requirements.txt; uploading output.log; uploading wandb-summary.json
+wandb: uploading summary, console lines 0-0
+wandb: 
+wandb: Run summary:
+wandb:      final_cost 0.00778
+wandb:         horizon 10
+wandb:     initial_std 1
+wandb:       mae_first 0.68309
+wandb:   mae_first_deg 24.62049
+wandb: mae_first_ratio 1.00374
+wandb:         mae_seq 0.66921
+wandb:   mae_seq_ratio 0.98688
+wandb:     ms_per_plan 2249.35906
+wandb:        n_elites 30
+wandb:              +3 ...
+wandb: 
+wandb: 🚀 View run D_cem-H10-N300-it3-cosine at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/096129fa83755c68
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_182817-096129fa83755c68/logs

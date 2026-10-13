@@ -1,0 +1,12 @@
+{
+  "best_val_loss": 0.0005053127112617988,
+  "best_ratio_vs_identity": 0.8524330220690077,
+  "val_identity": 0.0005927887566290126,
+  "epochs": 15,
+  "seed": 42,
+  "best_epoch": 13,
+  "still_improving": true,
+  "epoch_seconds_mean": 28.982069063186646,
+  "train_seconds": 434.7310359477997,
+  "checkpoint": "/root/c2/results/campaign/c2_sim_lora/A_screen/L6-wd0.01-do0.1-lr0.0003-res/predictor.pt"
+}

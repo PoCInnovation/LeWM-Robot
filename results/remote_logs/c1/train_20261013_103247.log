@@ -1,0 +1,86 @@
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /root/.netrc.
+wandb: Currently logged in as: kamil-akeramou (kamil-akeramou-poc) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run ffqlp7af
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_103416-ffqlp7af
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run predictor-cross_attn_bd
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/ffqlp7af
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+
+Chargement des données : /root/LeWM-Robot/results/encoded/_smoke_encoded_data.pt
+[Data] 0.24 GB de latents hébergés sur cuda — aucun transfert CPU→GPU pendant le training.
+  N paires   : 400
+  Embed dim  : 384
+  Action dim : 6
+[Fusion] poids de 03 chargés : /root/LeWM-Robot/results/fusion_weights/cross_attn_bd.pt
+
+[Fusion] strategy : cross_attn_bd, params : 1,184,256 (gelée)
+[Predictor] params : 3,945,600
+[Precision] autocast: torch.bfloat16
+
+Split : 318 train (147 augmentés) / 43 val (0 augmenté) — épisodes : 32 train / 8 val
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/ffqlp7af
+
+=== Training 2 epochs ===
+
+Epoch 1/2:   0%|          | 0/20 [00:00<?, ?it/s]Epoch 1/2:   5%|▌         | 1/20 [00:00<00:07,  2.67it/s]Epoch 1/2:  55%|█████▌    | 11/20 [00:00<00:00, 28.90it/s]Epoch 1/2:  95%|█████████▌| 19/20 [00:00<00:00, 42.42it/s]Epoch 1/2: 100%|██████████| 20/20 [00:00<00:00, 33.19it/s]
+  train=0.09057  val=0.06536  (identité 0.05959, ratio 1.097)  lr=1.00e-04  [1s, 513 éch/s, VRAM pic 0.7 GB]
+  [Best val, saved to _smoke_predictor_simu.pt]
+Epoch 2/2:   0%|          | 0/20 [00:00<?, ?it/s]Epoch 2/2:  50%|█████     | 10/20 [00:00<00:00, 90.59it/s]Epoch 2/2: 100%|██████████| 20/20 [00:00<00:00, 81.19it/s]Epoch 2/2: 100%|██████████| 20/20 [00:00<00:00, 82.36it/s]
+wandb: updating run metadata
+wandb: uploading wandb-metadata.json; uploading requirements.txt; uploading output.log; uploading wandb-summary.json; uploading config.yaml
+wandb: uploading history steps 0-1, summary, console lines 0-9
+wandb: 
+wandb: Run history:
+wandb:                epoch ▁█
+wandb:   perf/epoch_seconds █▁
+wandb:     perf/gpu_peak_gb ▁█
+wandb:   perf/samples_per_s ▁█
+wandb:  train/grad_norm_max █▁
+wandb: train/grad_norm_mean █▁
+wandb:           train/loss █▁
+wandb:             train/lr █▁
+wandb:     val/identity_mse ▁▁
+wandb:             val/loss █▁
+wandb:                   +1 ...
+wandb: 
+wandb: Run summary:
+wandb: best_ratio_vs_identity 1.0409
+wandb:          best_val_loss 0.06203
+wandb:                  epoch 1
+wandb:                 epochs 2
+wandb:     perf/epoch_seconds 0.25922
+wandb:       perf/gpu_peak_gb 0.66518
+wandb:     perf/samples_per_s 1226.76902
+wandb:            total_hours 0
+wandb:          total_seconds 1.08263
+wandb:    train/grad_norm_max 0.06755
+wandb:                     +6 ...
+wandb: 
+wandb: 🚀 View run predictor-cross_attn_bd at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/ffqlp7af
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_103416-ffqlp7af/logs
+  train=0.07060  val=0.06203  (identité 0.05959, ratio 1.041)  lr=5.00e-05  [0s, 1227 éch/s, VRAM pic 0.7 GB]
+  [Best val, saved to _smoke_predictor_simu.pt]
+
+=== Training terminé ===
+Best val loss : 0.06203  (ratio vs identité : 1.041)
+[ATTENTION] Le predictor ne bat pas la baseline « rien ne bouge » (z_t+1 = z_t) : il n'a pas appris la dynamique.
+Durée         : 0.0 min
+Checkpoint    : /root/LeWM-Robot/results/checkpoints/_smoke_predictor_simu.pt

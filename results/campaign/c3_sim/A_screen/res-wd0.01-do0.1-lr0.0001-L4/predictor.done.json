@@ -1,0 +1,12 @@
+{
+  "best_val_loss": 0.0012308102599812394,
+  "best_ratio_vs_identity": 0.49140436590490394,
+  "val_identity": 0.002504679130627473,
+  "epochs": 15,
+  "seed": 42,
+  "best_epoch": 8,
+  "still_improving": false,
+  "epoch_seconds_mean": 19.68297249476115,
+  "train_seconds": 295.24458742141724,
+  "checkpoint": "/root/c3/results/campaign/c3_sim/A_screen/res-wd0.01-do0.1-lr0.0001-L4/predictor.pt"
+}

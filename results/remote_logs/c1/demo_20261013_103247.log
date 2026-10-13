@@ -1,0 +1,52 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Device] TF32=on  cudnn.benchmark=on
+============================================================
+Environnement :
+  PyTorch    : 2.10.0+cu128
+  CUDA       : True
+  GPU        : NVIDIA GeForce RTX 4090 (sm_89, CUDA 12.8, cuDNN 91002)
+  VRAM       : 25.3 GB total, 24.8 GB libre
+  bf16       : True
+  TF32       : matmul=True cudnn=True
+============================================================
+
+Device : cuda
+
+--- Chargement DINOv3 ---
+[DINOv3Encoder] Loading facebook/dinov3-vits16-pretrain-lvd1689m on cuda (bfloat16)...
+Loading weights:   0%|          | 0/211 [00:00<?, ?it/s]Loading weights: 100%|██████████| 211/211 [00:00<00:00, 3720.29it/s]
+[DINOv3Encoder] Loaded. embed_dim=384, num_patches=196, patch_size=16, register_tokens=4, attn=sdpa
+
+--- Chargement du predictor ---
+Checkpoint   : /root/LeWM-Robot/results/checkpoints/_smoke_predictor_simu.pt
+  Fusion     : cross_attn_bd
+  LoRA       : non
+  Val loss   : 0.062029210229714714
+  Predictor params : 3,945,600
+
+--- Démo : frames du dataset ---
+[LeRobotDataLoader] Loading divisio74/duck_dataset_v3...
+[LeRobotDataLoader] torchcodec indisponible (libs FFmpeg ?) → backend vidéo 'pyav'.
+Fetching 4 files:   0%|          | 0/4 [00:00<?, ?it/s]Fetching 4 files: 100%|██████████| 4/4 [00:00<00:00, 1009.22it/s]
+[LeRobotDataLoader] 40 episodes, 17518 frames, 17478 paires valides.
+Dataset chargé : 17478 paires disponibles
+  État courant : idx=0, episode=0
+  État goal    : idx=30, episode=0
+  z_current shape : (392, 384)
+  z_goal shape    : (392, 384)
+
+--- Planning avec CEM ---
+[CEM] n_samples=64 horizon=5 iter=2 chunk=all autocast=torch.bfloat16
+Planning latency : 34 ms  |  VRAM pic : 0.39 GB
+Actions shape    : (5, 6)
+Best cost final  : 0.12515
+Cost evolution   : [0.12517, 0.12515]
+
+Action prédite par CEM (step 0) : [ -8.1 -50.8  31.9  48.8 -13.    5.1]  (degrés)
+Action vraie dans le dataset    : [  10.8 -104.5   92.3   70.8    4.6    0.2]
+Différence absolue              : [18.9 53.8 60.4 22.  17.7  4.9]
+
+Note : Si predictor pas encore entraîné, la différence sera élevée.

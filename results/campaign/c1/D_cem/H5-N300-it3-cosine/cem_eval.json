@@ -1,0 +1,18 @@
+{
+  "name": "cem-H5-N300-it3-cosine",
+  "horizon": 5,
+  "n_samples": 300,
+  "n_elites": 30,
+  "n_iter": 3,
+  "cost": "cosine",
+  "initial_std": 1.0,
+  "n_starts": 64,
+  "mae_first": 0.8326639968436211,
+  "mae_seq": 0.8753369003534317,
+  "mae_first_ratio": 1.2674951619096921,
+  "mae_seq_ratio": 1.3265937235479133,
+  "mae_first_deg": 29.224684178829193,
+  "final_cost": 0.005441729910671711,
+  "ms_per_plan": 795.0543351471424,
+  "checkpoint": "/root/LeWM-Robot/results/campaign/c1/best_predictor.pt"
+}

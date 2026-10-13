@@ -1,0 +1,40 @@
+
+$ /root/LeWM-Robot/.venv/bin/python /root/LeWM-Robot/scripts/08_eval_planner.py --config configs/rtx4090.yaml --encoded-data results/encoded/encoded_data.pt --predictor-ckpt /root/LeWM-Robot/results/campaign/c1/best_predictor.pt --output /root/LeWM-Robot/results/campaign/c1/D_cem/H20-N1000-it3-cosine/cem_eval.json --n-starts 64 --rollout-chunk 500 --horizon 20 --n-samples 1000 --n-iter 3 --cost cosine --wandb-group c1-D_cem --wandb-name D_cem-H20-N1000-it3-cosine
+[Config] Seed set to 42
+[Device] ATTENTION : Impossible de garantir la limite GPU à 80 % : nvidia-smi a échoué : Failed to set power management limit for GPU 00000000:01:00.0: Insufficient Permissions
+Terminating early due to previous errors.. Sous Windows, lancer PowerShell en administrateur.
+[Eval CEM] cem-H20-N1000-it3-cosine — 64 départs (épisodes de val), checkpoint best_predictor.pt
+[Eval CEM] MAE 1er pas 0.751 (ratio vs action moyenne 1.136, ~27.1°)  séquence 0.797 (ratio 1.184)  10379 ms/plan  → /root/LeWM-Robot/results/campaign/c1/D_cem/H20-N1000-it3-cosine/cem_eval.json
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /root/.netrc.
+wandb: Currently logged in as: kamil-akeramou (kamil-akeramou-poc) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Using an existing wandb-core service via WANDB_SERVICE.
+wandb: WARNING Using a boolean value for 'reinit' is deprecated. Use 'return_previous' or 'finish_previous' instead.
+wandb: setting up run 8cc48c0a370a21a4
+wandb: Tracking run with wandb version 0.30.0
+wandb: Run data is saved locally in /root/LeWM-Robot/results/wandb/run-20261013_133445-8cc48c0a370a21a4
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run D_cem-H20-N1000-it3-cosine
+wandb: ⭐️ View project at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: 🚀 View run at https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/8cc48c0a370a21a4
+[W&B] Run actif : https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/8cc48c0a370a21a4
+wandb: updating run metadata; uploading data
+wandb: uploading output.log; uploading wandb-summary.json; uploading config.yaml; uploading wandb-metadata.json; uploading requirements.txt
+wandb: uploading summary, console lines 0-0
+wandb: 
+wandb: Run summary:
+wandb:      final_cost 0.01461
+wandb:         horizon 20
+wandb:     initial_std 1
+wandb:       mae_first 0.75133
+wandb:   mae_first_deg 27.11822
+wandb: mae_first_ratio 1.13628
+wandb:         mae_seq 0.7965
+wandb:   mae_seq_ratio 1.18417
+wandb:     ms_per_plan 10379.01635
+wandb:        n_elites 100
+wandb:              +3 ...
+wandb: 
+wandb: 🚀 View run D_cem-H20-N1000-it3-cosine at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm/runs/8cc48c0a370a21a4
+wandb: ⭐️ View project at: https://wandb.ai/kamil-akeramou-poc/lewm-robot-wm
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./results/wandb/run-20261013_133445-8cc48c0a370a21a4/logs
