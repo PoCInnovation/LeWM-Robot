@@ -110,12 +110,15 @@ def main():
     parser.add_argument("--n-samples", type=int, default=300,
                         help="300 ≈ 0,15 s par pas d'horizon sur 4090 (1000 : ~0,5 s)")
     parser.add_argument("--n-iter", type=int, default=3)
-    parser.add_argument("--cost", default="cosine", choices=["cosine", "mse"])
+    parser.add_argument("--cost", default="cosine", choices=["cosine", "mse", "weighted_mse"])
     parser.add_argument("--no-warm-start", action="store_true")
     # boucle
     parser.add_argument("--execute", action="store_true",
                         help="Envoie réellement les cibles au bras")
     parser.add_argument("--max-steps", type=int, default=100)
+    parser.add_argument("--actions-per-plan", type=int, default=1,
+                        help="Actions du plan exécutées avant de replanifier "
+                             "(2–3 : moins d'arrêts pendant le CEM)")
     parser.add_argument("--max-step-deg", type=float, default=15.0,
                         help="Écart max cible − état par articulation et par pas")
     parser.add_argument("--stop-cost", type=float, default=None,
@@ -184,6 +187,7 @@ def main():
         try:
             log = run_mpc(robot, agent, frameskip=frameskip, fps=args.fps,
                           max_steps=args.max_steps, execute=args.execute,
+                          actions_per_plan=args.actions_per_plan,
                           stop_cost=args.stop_cost, log_path=log_path)
         except KeyboardInterrupt:
             print("\n[MPC] interrompu")

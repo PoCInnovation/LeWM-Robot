@@ -14,6 +14,9 @@
 # à l'IC près : 128 départs ici contre 64).
 # H = 4, G = 20 : goal 100 frames plus loin que l'horizon, comme sur le
 # robot (goal = fin de la tâche) — seul le 1er pas compte.
+# Coût : cosine (c1–c3) contre mse et weighted_mse (MSE par patch pondérée
+# par ce qui doit changer entre l'état courant et le goal : avec cosine,
+# le fond immobile domine le coût et départage mal les actions).
 # 128 départs : 08 donne maintenant l'IC 95 % des ratios ; à 64 départs,
 # les écarts de c1–c3 (0,97 contre 1,0) étaient probablement dans le bruit.
 #
@@ -22,7 +25,7 @@
 #   results/campaign/c3_sim/best_predictor_real.pt
 #
 # Durée (mesuré en c3 sur la 4090 : ~520 ms par pas d'horizon et par plan,
-# N = 1000) : 128 départs × 0,52 s × (4+6+8+10+12+4) pas ≈ 49 min par
+# N = 1000) : 128 départs × 0,52 s × (4+6+8+10+12+4+4+4+4) pas ≈ 62 min par
 # checkpoint, + ~1 min de chargement par run.
 # ═══════════════════════════════════════════════════════════════
 
@@ -42,11 +45,15 @@ stages:
     predictor_ckpt: results/campaign/c3_real/best_predictor.pt
     fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
     variants: [{horizon: 4}, {horizon: 6}, {horizon: 8}, {horizon: 10}, {horizon: 12},
-               {horizon: 4, goal_steps: 20}]
+               {horizon: 4, goal_steps: 20},
+               {horizon: 4, cost: mse}, {horizon: 4, cost: weighted_mse},
+               {horizon: 4, goal_steps: 20, cost: weighted_mse}]
 
   - name: D_sim_lora
     script: "08"
     predictor_ckpt: results/campaign/c3_sim/best_predictor_real.pt
     fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
     variants: [{horizon: 4}, {horizon: 6}, {horizon: 8}, {horizon: 10}, {horizon: 12},
-               {horizon: 4, goal_steps: 20}]
+               {horizon: 4, goal_steps: 20},
+               {horizon: 4, cost: mse}, {horizon: 4, cost: weighted_mse},
+               {horizon: 4, goal_steps: 20, cost: weighted_mse}]

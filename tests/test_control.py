@@ -98,3 +98,37 @@ def test_stop_cost_ends_the_episode():
     agent.set_goal(image_to_chw(obs["wrist"]), image_to_chw(obs["front"]))
     log = run_mpc(robot, agent, frameskip=5, max_steps=10, stop_cost=10.0, verbose=False)
     assert len(log) == 1
+
+
+def test_several_actions_per_plan_replan_every_k_steps():
+    robot = FakeRobot()
+    agent = make_agent()
+    obs = robot.get_observation()
+    agent.set_goal(image_to_chw(obs["wrist"]), image_to_chw(obs["front"]))
+    calls = []
+    plan = agent.planner.plan
+    agent.planner.plan = lambda *a, **k: calls.append(k.get("init_mean")) or plan(*a, **k)
+    log = run_mpc(robot, agent, frameskip=5, max_steps=5, execute=True,
+                  actions_per_plan=2, sleep=lambda s: None, verbose=False)
+    assert [e["replanned"] for e in log] == [True, False, True, False, True]
+    assert len(calls) == 3 and len(robot.sent) == 5
+    # 2e action du plan, depuis l'état atteint
+    assert torch.allclose(torch.tensor(log[1]["target"]),
+                          torch.tensor(log[1]["state"]) + torch.tensor(log[1]["action"]))
+
+
+def test_weighted_cost_ignores_patches_that_need_not_change():
+    from src.planner import CEMConfig, CEMPlanner
+    pred = make_agent().planner.predictor
+    planner = CEMPlanner(pred, CEMConfig(horizon=1, n_samples=4, n_elites=2, n_iterations=1,
+                                         action_dim=6, device="cpu", precision="fp32",
+                                         cost_type="weighted_mse"))
+    z_cur = torch.zeros(4, D)
+    z_goal = z_cur.clone(); z_goal[0] = 1.0          # seul le patch 0 doit changer
+    planner.plan(z_cur, z_goal)
+    w = planner._patch_weights
+    assert abs(float(w.sum()) - 1) < 1e-6 and w[0] > 3 * w[1]
+    good = z_goal.unsqueeze(0).clone(); bad = good.clone(); bad[0, 1] += 1.0
+    near = good.clone(); near[0, 0] = 0.0             # patch qui devait changer : raté
+    c = planner._compute_cost(torch.cat([good, bad, near]), z_goal)
+    assert c[0] == 0 and 0 < c[1] < c[2]

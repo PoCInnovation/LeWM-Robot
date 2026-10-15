@@ -96,7 +96,7 @@ def main():
     parser.add_argument("--n-elites", type=int, default=None,
                         help="Défaut : 10 %% de --n-samples")
     parser.add_argument("--n-iter", type=int, default=3)
-    parser.add_argument("--cost", default="cosine", choices=["cosine", "mse"])
+    parser.add_argument("--cost", default="cosine", choices=["cosine", "mse", "weighted_mse"])
     parser.add_argument("--initial-std", type=float, default=1.0,
                         help="Écart-type initial (1.0 = celui du dataset)")
     parser.add_argument("--n-starts", type=int, default=64,

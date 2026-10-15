@@ -115,7 +115,7 @@ def test_cem_stage_on_given_checkpoint_and_on_each_run(tmp_path):
     c.command = lambda stage, params, run_dir, fusion, ckpt, name: (
         plans.append(ckpt) or (run_dir / "never.json", []))
     c.run_stage(stage, "cross_attn_bd", None)
-    assert plans == [stage["predictor_ckpt"]] * 6
+    assert plans == [stage["predictor_ckpt"]] * 9
 
     c = _campaign_from("configs/campaign_c4_multistep.yaml")
     c.dir = tmp_path
@@ -128,8 +128,9 @@ def test_cem_stage_on_given_checkpoint_and_on_each_run(tmp_path):
         plans.append((name, ckpt)) or (run_dir / "never.json", []))
     c.run_stage(d, "cross_attn_bd", "<best>")
     assert [n for n, _ in plans] == [
-        f"RH{h}/it3-N1000-cosine-{v}" for h in (1, 4) for v in ("H4", "H8", "H4-G20")]
-    assert plans[3][1] == str(tmp_path / "RH4" / "predictor.pt")
+        f"RH{h}/it3-N1000-{v}" for h in (1, 4)
+        for v in ("cosine-H4", "cosine-H8", "cosine-H4-G20", "weighted_mse-H4")]
+    assert plans[4][1] == str(tmp_path / "RH4" / "predictor.pt")
 
 
 def test_epoch_time_is_keyed_by_layers_and_rollout_horizon():

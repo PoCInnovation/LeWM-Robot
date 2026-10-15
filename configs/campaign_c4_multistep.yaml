@@ -21,7 +21,7 @@
 # ~H fois une epoch one-step (9,8 s mesurées en c3 pour L6), plus ~1/3 de
 # recalcul (gradient checkpointing). La campagne affiche le temps restant
 # à partir du premier run multi-step terminé.
-# D_cem : 4 checkpoints × 128 départs × 0,52 s × (4+8+4) pas ≈ 71 min.
+# D_cem : 4 checkpoints × 128 départs × 0,52 s × (4+8+4+4) pas ≈ 89 min.
 #
 # Poids de fusion de c1 (hors git, à copier) :
 #   results/fusion_weights_remote/cross_attn_bd.pt
@@ -58,4 +58,5 @@ stages:
     script: "08"
     checkpoints_from: A_rollout
     fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
-    variants: [{horizon: 4}, {horizon: 8}, {horizon: 4, goal_steps: 20}]
+    variants: [{horizon: 4}, {horizon: 8}, {horizon: 4, goal_steps: 20},
+               {horizon: 4, cost: weighted_mse}]

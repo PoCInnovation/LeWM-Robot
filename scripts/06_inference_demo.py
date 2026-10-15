@@ -178,7 +178,7 @@ def main():
     parser.add_argument("--n-samples",   type=int, default=200)
     parser.add_argument("--n-elites",    type=int, default=20)
     parser.add_argument("--n-iter",      type=int, default=3)
-    parser.add_argument("--cost", default="cosine", choices=["cosine", "mse"],
+    parser.add_argument("--cost", default="cosine", choices=["cosine", "mse", "weighted_mse"],
                         help="Coût du CEM (réglé par la campagne : best.json)")
     parser.add_argument("--rollout-chunk", type=int, default=0,
                         help="Candidats déroulés par passe (0 = tous). "

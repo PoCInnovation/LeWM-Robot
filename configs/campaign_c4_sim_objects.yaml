@@ -23,7 +23,7 @@
 #     results/fusion_weights_sim/cross_attn_bd.pt
 # Durée (mesuré en c2/c3_sim sur la 4090) : 02 ≈ 10 min (290 épisodes),
 # 04 L4 ≈ 15 × 19,7 s ≈ 5 min, LoRA ≈ 20 × 13,8 s ≈ 5 min, CEM
-# 128 × 0,52 s × (4+8+4) ≈ 18 min.
+# 128 × 0,52 s × (4+8+4+4) ≈ 22 min.
 # ═══════════════════════════════════════════════════════════════
 
 name: c4_sim_objects
@@ -59,4 +59,5 @@ stages:
   - name: D_cem
     script: "08"
     fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
-    variants: [{horizon: 4}, {horizon: 8}, {horizon: 4, goal_steps: 20}]
+    variants: [{horizon: 4}, {horizon: 8}, {horizon: 4, goal_steps: 20},
+               {horizon: 4, cost: weighted_mse}]

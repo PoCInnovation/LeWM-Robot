@@ -91,6 +91,7 @@ class WorldModelAgent:
         self.warm_start = warm_start
         self.z_goal: Optional[torch.Tensor] = None
         self._plan: Optional[torch.Tensor] = None
+        self._used = 0                     # actions du plan déjà exécutées
 
     @torch.no_grad()
     def latent(self, wrist: torch.Tensor, front: torch.Tensor) -> torch.Tensor:
@@ -111,7 +112,7 @@ class WorldModelAgent:
         if self.z_goal is None:
             raise RuntimeError("set_goal() avant act()")
         z = self.latent(wrist, front)
-        init = shift_plan(self._plan) if self.warm_start else None
+        init = shift_plan(self._plan, max(1, self._used)) if self.warm_start else None
         t0 = time.time()
         plan, diag = self.planner.plan(z, self.z_goal, return_diagnostics=True,
                                        init_mean=init)
@@ -119,18 +120,28 @@ class WorldModelAgent:
             torch.cuda.synchronize()
         plan_ms = (time.time() - t0) * 1000
         self._plan = plan.detach().float().cpu()
-        action = self.stats.denormalize(self._plan[0])
+        self._used = 0
+        return self.follow(state, cost=float(diag["best_cost"][-1]), plan_ms=plan_ms)
+
+    def follow(self, state: torch.Tensor, cost: float = float("nan"),
+               plan_ms: float = 0.0) -> Step:
+        """Action suivante du plan courant, sans replanifier (cible calculée
+        depuis l'état mesuré maintenant)."""
+        if self._plan is None or self._used >= len(self._plan):
+            raise RuntimeError("plus d'action dans le plan : appeler act()")
+        action = self.stats.denormalize(self._plan[self._used])
+        self._used += 1
         state = state.float()
         raw = state + action if self.stats.mode == "delta" else action
         target = torch.maximum(torch.minimum(raw, state + self.max_step),
                                state - self.max_step)
-        return Step(target=target, raw_target=raw, action=action,
-                    cost=float(diag["best_cost"][-1]), plan_ms=plan_ms,
-                    clipped=bool((target != raw).any()))
+        return Step(target=target, raw_target=raw, action=action, cost=cost,
+                    plan_ms=plan_ms, clipped=bool((target != raw).any()))
 
 
 def run_mpc(robot, agent: WorldModelAgent, *, frameskip: int, fps: float = 30.0,
             max_steps: int = 100, execute: bool = False,
+            actions_per_plan: int = 1,
             stop_cost: Optional[float] = None,
             log_path: Optional[Path] = None,
             sleep: Callable[[float], None] = time.sleep,
@@ -144,6 +155,11 @@ def run_mpc(robot, agent: WorldModelAgent, *, frameskip: int, fps: float = 30.0,
     Sans `execute` : rien n'est envoyé (vérifier les cibles proposées en
     bougeant le bras à la main).
 
+    actions_per_plan k > 1 : exécute les k premières actions du plan avant
+    de replanifier (cibles recalculées depuis l'état mesuré) — le bras
+    s'arrête k fois moins souvent pendant le CEM (~0,6 s sur 4090 pour
+    un pas de 0,17 s), au prix d'une boucle moins réactive.
+
     Returns:
         une entrée de log par pas (aussi écrite en JSONL dans log_path)
     """
@@ -154,7 +170,9 @@ def run_mpc(robot, agent: WorldModelAgent, *, frameskip: int, fps: float = 30.0,
         for i in range(max_steps):
             obs = robot.get_observation()
             state = state_of(obs)
-            step = agent.act(image_to_chw(obs["wrist"]), image_to_chw(obs["front"]), state)
+            replan = i % max(1, actions_per_plan) == 0
+            step = (agent.act(image_to_chw(obs["wrist"]), image_to_chw(obs["front"]), state)
+                    if replan else agent.follow(state))
             sent = None
             if execute:
                 sent = robot.send_action({f"{m}.pos": float(v)
@@ -164,7 +182,7 @@ def run_mpc(robot, agent: WorldModelAgent, *, frameskip: int, fps: float = 30.0,
                      "target": step.target.tolist(), "raw_target": step.raw_target.tolist(),
                      "action": step.action.tolist(), "cost": step.cost,
                      "plan_ms": step.plan_ms, "clipped": step.clipped,
-                     "executed": execute,
+                     "executed": execute, "replanned": replan,
                      "sent": [float(sent[f"{m}.pos"]) for m in MOTORS] if sent else None}
             log.append(entry)
             if out:
@@ -172,10 +190,12 @@ def run_mpc(robot, agent: WorldModelAgent, *, frameskip: int, fps: float = 30.0,
                 out.flush()
             if verbose:
                 delta = (step.target - state).numpy().round(1)
-                print(f"[MPC] pas {i:3d}  coût {step.cost:.4f}  plan {step.plan_ms:.0f} ms  "
-                      f"Δ cible {delta}{'  (borné)' if step.clipped else ''}"
-                      f"{'' if execute else '  [non envoyé]'}")
-            if stop_cost is not None and step.cost <= stop_cost:
+                print(f"[MPC] pas {i:3d}  "
+                      + (f"coût {step.cost:.4f}  plan {step.plan_ms:.0f} ms  " if replan
+                         else "(suite du plan)  ")
+                      + f"Δ cible {delta}{'  (borné)' if step.clipped else ''}"
+                      + ("" if execute else "  [non envoyé]"))
+            if replan and stop_cost is not None and step.cost <= stop_cost:
                 if verbose:
                     print(f"[MPC] coût ≤ {stop_cost} : goal atteint (au sens du latent)")
                 break

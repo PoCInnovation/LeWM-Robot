@@ -43,7 +43,10 @@ class CEMConfig:
     action_low: "float | torch.Tensor" = -1.0
     action_high: "float | torch.Tensor" = 1.0
     initial_std: float = 1.0
-    cost_type: str = "cosine"           # "cosine" / "mse"
+    # "cosine" / "mse" sur toute l'image ; "weighted_mse" : MSE par patch
+    # pondérée par ce qui doit changer entre l'état courant et le goal (bras,
+    # objet) — avec cosine/mse, le fond immobile domine le coût.
+    cost_type: str = "cosine"
     elite_momentum: float = 0.0         # 0 = full refit, >0 = lisser entre iter
     device: str = "auto"
     # GPU (RTX 5090) :
@@ -114,6 +117,14 @@ class CEMPlanner:
                               device=device).expand(cfg.action_dim)
         high = torch.as_tensor(cfg.action_high, dtype=torch.float32,
                                device=device).expand(cfg.action_dim)
+
+        # Poids par patch du coût "weighted_mse" (une fois par plan) :
+        # écart courant → goal du patch, plus la moyenne des écarts pour que
+        # le reste de l'image compte encore (un bras qui bouge ailleurs doit
+        # coûter). Somme = 1.
+        diff = ((z_goal.float() - z_current.float()) ** 2).mean(-1)      # (N,)
+        w = diff + diff.mean()
+        self._patch_weights = w / w.sum().clamp(min=1e-12)
 
         # Init distribution
         mean = (torch.zeros(cfg.horizon, cfg.action_dim, device=device)
@@ -199,6 +210,9 @@ class CEMPlanner:
             return 1 - cos_sim
         elif self.config.cost_type == "mse":
             return ((z_pred_final - z_goal.unsqueeze(0)) ** 2).mean(dim=(-1, -2))
+        elif self.config.cost_type == "weighted_mse":
+            per_patch = ((z_pred_final - z_goal.unsqueeze(0)) ** 2).mean(dim=-1)  # (n, N)
+            return per_patch @ self._patch_weights
         else:
             raise ValueError(f"Unknown cost_type: {self.config.cost_type}")
 
