@@ -1,0 +1,61 @@
+# ═══════════════════════════════════════════════════════════════
+# Campagne c4_multistep — perte multi-step sur les démos réelles.
+#
+# c1–c3 entraînent en one-step (z_t → z_{t+1}) mais le CEM déroule le
+# predictor sur H pas à partir de ses propres prédictions : il n'a jamais
+# vu ses erreurs en entrée. Signature mesurée par le diagnostic CEM de c3 :
+# la démo bat « rien ne bouge » à 1 pas (0,858) mais plus à 4 pas (1,087).
+# Ici, 04 --rollout-horizon H déroule le predictor sur H pas pendant le
+# training et pénalise toute la trajectoire.
+#
+# Recette de c3_real (meilleur predictor : L6, lr 1e-4, wd 0,1, frameskip
+# 5, delta) ; seul l'horizon de training change. RH = 1 est la baseline
+# one-step, avec le même critère de sélection que les autres.
+#
+# Sélection du checkpoint sur le rollout de val à 8 pas (40 frames,
+# 1,3 s) : la métrique que le CEM subit, la même pour tous les runs.
+# À comparer : best_ratio_vs_identity (rollout 8 pas), one_step_ratio
+# (contre 0,752 de c3_real) et surtout le CEM (D_cem, pour chaque run).
+#
+# Durée : 04 en multi-step pas encore mesuré. Une epoch RH = H coûte
+# ~H fois une epoch one-step (9,8 s mesurées en c3 pour L6), plus ~1/3 de
+# recalcul (gradient checkpointing). La campagne affiche le temps restant
+# à partir du premier run multi-step terminé.
+# D_cem : 4 checkpoints × 128 départs × 0,52 s × (4+8+4) pas ≈ 71 min.
+#
+# Poids de fusion de c1 (hors git, à copier) :
+#   results/fusion_weights_remote/cross_attn_bd.pt
+# ═══════════════════════════════════════════════════════════════
+
+name: c4_multistep
+config: configs/rtx4090.yaml
+encoded_data: results/encoded/encoded_data.pt     # duck_dataset_v3
+encode_args: [--no-augment]                        # cf. configs/campaign_c4_horizon.yaml
+fusion: cross_attn_bd
+real_data: null
+
+stages:
+  - name: A_rollout
+    script: "04"
+    epochs: 15
+    fixed:
+      batch_size: 64
+      residual: true
+      frameskip: 5
+      action_mode: delta
+      lr: 1.0e-4
+      n_layers: 6
+      weight_decay: 0.1
+      dropout: 0.1
+      val_horizon: 8
+      select_on: rollout
+      fusion_ckpt: results/fusion_weights_remote/cross_attn_bd.pt
+    grid: {rollout_horizon: [1, 2, 4, 8]}
+
+  # CEM sur CHAQUE run de A_rollout (pas seulement le meilleur) : c'est
+  # l'effet de l'horizon de training sur le planner qu'on mesure.
+  - name: D_cem
+    script: "08"
+    checkpoints_from: A_rollout
+    fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
+    variants: [{horizon: 4}, {horizon: 8}, {horizon: 4, goal_steps: 20}]

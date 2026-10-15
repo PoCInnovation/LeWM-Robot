@@ -13,7 +13,10 @@ Enchaîne, d'après un fichier de campagne (configs/campaign_rtx4090.yaml) :
     - le meilleur predictor (val loss la plus basse parmi ceux qui battent
       la baseline « rien ne bouge », ratio < 1) est copié dans
       results/campaign/<name>/best_predictor.pt ; idem LoRA ; le meilleur
-      réglage CEM va dans best.json.
+      réglage CEM va dans best.json ;
+    - une étape 08 peut viser un checkpoint existant (`predictor_ckpt`, sans
+      réentraîner) ou chaque run d'une étape 04 (`checkpoints_from`), au
+      lieu du meilleur predictor de la campagne.
 
 Durée : --dry-run liste les runs et le nombre d'epochs par taille de modèle ;
 pendant la campagne, le temps d'epoch MESURÉ de chaque run terminé sert à
@@ -66,7 +69,7 @@ def fmt(v) -> str:
 def run_name(params: dict) -> str:
     short = {"lr": "lr", "n_layers": "L", "weight_decay": "wd", "dropout": "do",
              "lora_rank": "r", "horizon": "H", "n_samples": "N", "n_iter": "it",
-             "cost": "", "seed": "seed"}
+             "cost": "", "seed": "seed", "rollout_horizon": "RH", "goal_steps": "G"}
     parts = []
     for k, v in params.items():
         if k == "residual":
@@ -161,7 +164,7 @@ class Campaign:
         self.cem_data = self.encoded       # devient real_data si la LoRA a tourné
         self.results: dict = {}           # étape → [{name, params, result}]
         self.failures: list = []
-        self.epoch_seconds: dict = {}     # n_layers → [s/epoch mesurés]
+        self.epoch_seconds: dict = {}     # "L<couches>-RH<horizon>" → [s/epoch mesurés]
 
     # ── utilitaires ──────────────────────────────────────────────
     def env_for(self, stage: str, name: str) -> dict:
@@ -226,14 +229,26 @@ class Campaign:
                      "les démos réelles d'abord : python scripts/02_encode_dataset.py "
                      f"--config {self.config_path} --dataset-id <démos> --output {self.spec['real_data']}")
         runs = expand(stage, self.results)
-        print(f"\n══════ [Campagne] {name_s} : {len(runs)} runs")
+        targets = [("", best_ckpt)]
+        if stage.get("predictor_ckpt"):
+            targets = [("", stage["predictor_ckpt"])]
+        elif stage.get("checkpoints_from"):
+            src = [r for r in self.results.get(stage["checkpoints_from"], [])
+                   if r.get("result") or self.dry_run]
+            targets = [(r["name"] + "/", str(Path(r["dir"]) / "predictor.pt")) for r in src]
+            if not targets:
+                print(f"\n[Campagne] {name_s} sautée (aucun run terminé dans "
+                      f"{stage['checkpoints_from']})")
+                return
+        print(f"\n══════ [Campagne] {name_s} : {len(runs) * len(targets)} runs")
         self.results[name_s] = []
         plans = []
-        for params in runs:
-            name = run_name(params)
-            run_dir = self.dir / name_s / name
-            done, cmd = self.command(stage, params, run_dir, fusion, best_ckpt, name)
-            plans.append((params, name, run_dir, done, cmd))
+        for prefix, ckpt in targets:
+            for params in runs:
+                name = prefix + run_name(params)
+                run_dir = self.dir / name_s / name
+                done, cmd = self.command(stage, params, run_dir, fusion, ckpt, name)
+                plans.append((params, name, run_dir, done, cmd))
         for i, (params, name, run_dir, done, cmd) in enumerate(plans):
             entry = {"name": name, "params": params, "dir": str(run_dir)}
             self.results[name_s].append(entry)
@@ -246,7 +261,7 @@ class Campaign:
                 print(f"  · {name}")
                 continue
             if stage["script"] == "04":
-                self.print_eta([(q["n_layers"], stage["epochs"])
+                self.print_eta([(q, stage["epochs"])
                                 for q, _, _, d, _ in plans[i:] if not d.exists()])
             print(f"\n──── {name_s}/{name}")
             t0 = time.time()
@@ -262,7 +277,7 @@ class Campaign:
 
     def command(self, stage, params, run_dir, fusion, best_ckpt, name):
         s = stage["script"]
-        wb = self.wandb_args(stage["name"], name)
+        wb = self.wandb_args(stage["name"], name.replace("/", "-"))
         if s == "04":
             out = run_dir / "predictor.pt"
             return out.with_name("predictor.done.json"), self.py(
@@ -277,8 +292,8 @@ class Campaign:
         if s == "08":
             out = run_dir / "cem_eval.json"
             return out, self.py(
-                "08", "--encoded-data", self.cem_data, "--predictor-ckpt", best_ckpt,
-                "--output", out, *self.flags(params), *wb)
+                "08", "--encoded-data", stage.get("cem_data", self.cem_data),
+                "--predictor-ckpt", best_ckpt, "--output", out, *self.flags(params), *wb)
         raise ValueError(f"script inconnu : {s}")
 
     @staticmethod
@@ -293,36 +308,58 @@ class Campaign:
         return out
 
     # ── temps ────────────────────────────────────────────────────
+    @staticmethod
+    def size_of(params) -> tuple:
+        """(couches, horizon de rollout) : ce qui fixe le temps d'epoch de 04."""
+        return params["n_layers"], params.get("rollout_horizon", 1)
+
     def record_timing(self, params, result):
         if result and result.get("epoch_seconds_mean") and "n_layers" in params:
-            self.epoch_seconds.setdefault(params["n_layers"], []).append(
+            L, h = self.size_of(params)
+            self.epoch_seconds.setdefault(f"L{L}-RH{h}", []).append(
                 result["epoch_seconds_mean"])
 
-    def t_epoch(self, n_layers):
-        """s/epoch mesuré pour cette taille, sinon extrapolé ∝ nb de couches."""
-        if n_layers in self.epoch_seconds:
-            v = self.epoch_seconds[n_layers]
+    def t_epoch(self, params):
+        """s/epoch mesuré pour cette taille, sinon extrapolé ∝ couches × horizon."""
+        L, h = self.size_of(params)
+        if f"L{L}-RH{h}" in self.epoch_seconds:
+            v = self.epoch_seconds[f"L{L}-RH{h}"]
             return sum(v) / len(v), True
         if self.epoch_seconds:
-            L0, v = next(iter(self.epoch_seconds.items()))
-            return sum(v) / len(v) * n_layers / L0, False
+            key, v = next(iter(self.epoch_seconds.items()))
+            L0, h0 = (int(x[1:] if x[0] == "L" else x[2:]) for x in key.split("-"))
+            return sum(v) / len(v) * (L * h) / (L0 * h0), False
         return None, False
 
     def print_eta(self, pending: list):
-        """pending : [(n_layers, epochs)] des runs 04 restant dans l'étape."""
+        """pending : [(params, epochs)] des runs 04 restant dans l'étape."""
         if not pending:
             return
         total, exact = 0.0, True
-        for n_layers, epochs in pending:
-            t, measured = self.t_epoch(n_layers)
+        for params, epochs in pending:
+            t, measured = self.t_epoch(params)
             if t is None:
                 print("[Campagne] temps d'epoch pas encore mesuré (premier run de 04).")
                 return
             total += epochs * t
             exact &= measured
         print(f"[Campagne] reste dans l'étape : {sum(e for _, e in pending)} epochs "
-              f"≈ {total / 60:.0f} min{'' if exact else ' (en partie extrapolé ∝ nb de couches)'}"
+              f"≈ {total / 60:.0f} min{'' if exact else ' (en partie extrapolé ∝ couches × horizon)'}"
               " + ~1 min de chargement par run")
+
+    @staticmethod
+    def cem_table(stage_name: str, evals: list):
+        """Tous les réglages CEM de l'étape (ratio < 1 : mieux que l'action moyenne)."""
+        if not evals:
+            return
+        print(f"[Campagne] {stage_name} — ratio MAE vs action moyenne "
+              "(1er pas [IC 95 %] / séquence), ms/plan :")
+        for r in evals:
+            res = r["result"]
+            ci = res.get("mae_first_ratio_ci95")
+            ci = f" [{ci[0]:.3f}–{ci[1]:.3f}]" if ci else ""
+            print(f"  {r['name']:<48} {res['mae_first_ratio']:.3f}{ci} / "
+                  f"{res['mae_seq_ratio']:.3f}  {res['ms_per_plan']:.0f} ms")
 
     def save_state(self):
         if self.dry_run:
@@ -409,17 +446,20 @@ class Campaign:
                     # modèle adapté aux démos réelles → CEM évalué sur leurs épisodes de val
                     self.cem_data = self.spec["real_data"]
             elif stage["script"] == "08":
-                if best_ckpt is None and not self.dry_run:
+                own_ckpt = stage.get("predictor_ckpt") or stage.get("checkpoints_from")
+                if best_ckpt is None and not own_ckpt and not self.dry_run:
                     print("[Campagne] pas de predictor qui bat la baseline → CEM sauté")
                     continue
                 self.run_stage(stage, fusion, best_ckpt or "<best_predictor.pt>")
                 evals = [r for r in self.results.get(stage["name"], []) if r.get("result")]
+                self.cem_table(stage["name"], evals)
                 if evals:
-                    top = min(evals, key=lambda r: (r["result"]["mae_seq_ratio"],
+                    # 1re action : la seule que le MPC exécute avant de replanifier
+                    top = min(evals, key=lambda r: (r["result"]["mae_first_ratio"],
                                                     r["result"]["ms_per_plan"]))
                     best["cem"] = top
-                    print(f"[Campagne] meilleur CEM : {top['name']} — MAE séquence "
-                          f"ratio {top['result']['mae_seq_ratio']:.3f}, "
+                    print(f"[Campagne] meilleur CEM : {top['name']} — MAE 1er pas "
+                          f"ratio {top['result']['mae_first_ratio']:.3f}, "
                           f"{top['result']['ms_per_plan']:.0f} ms/plan")
         self.save_state()
         if not self.dry_run:
@@ -440,13 +480,15 @@ class Campaign:
                             for p in expand(dict(stage, from_best=None), {})] * top
                 else:
                     runs = expand(stage, self.results)
-                per_layers: dict = {}
+                per_size: dict = {}
                 for p in runs:
-                    per_layers[p["n_layers"]] = per_layers.get(p["n_layers"], 0) + stage["epochs"]
+                    size = self.size_of(p)
+                    per_size[size] = per_size.get(size, 0) + stage["epochs"]
                 print(f"  {stage['name']} : " + ", ".join(
                     f"{e} epochs à {L}" + (" couches" if isinstance(L, int) else "")
-                    for L, e in sorted(per_layers.items(), key=str)))
-            print("Durée de 04 = Σ (epochs × s/epoch mesuré pour la taille) "
+                    + (f" en rollout {h} pas" if h > 1 else "")
+                    for (L, h), e in sorted(per_size.items(), key=str)))
+            print("Durée de 04 = Σ (epochs × s/epoch mesuré pour la taille et l'horizon) "
                   "+ ~1 min de chargement des latents par run.")
             return
         print(f"\n══════ [Campagne] terminée — {self.dir}")

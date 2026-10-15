@@ -126,6 +126,25 @@ class LatentPairs:
             out = tuple(t[k][idx] for k in LEGACY_KEYS)
         return tuple(self._out(x) for x in out) + (self._out(t["action"][idx]),)
 
+    def fetch_chain(self, chains: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        """
+        Séquences de H paires consécutives (cf. `rollout_chains`), format v2.
+
+        Returns:
+            z_wrist_0, z_global_0 : (B, P, D)     frame de départ
+            z_wrist, z_global     : (B, H, P, D)  frames d'arrivée des H pas
+            action                : (B, H, A)
+        """
+        if not self.indexed:
+            raise ValueError("Rollout multi-step : format v2 (tables de frames) requis")
+        chains = chains.to(self.device)
+        t = self.tensors
+        rows0 = t["idx_t"][chains[:, 0]]
+        rows = t["idx_t1"][chains]
+        out = (t["wrist"][rows0], t["global"][rows0],
+               t["wrist"][rows], t["global"][rows], t["action"][chains])
+        return tuple(self._out(x) for x in out)
+
     def normalize_actions(self, stats: "ActionStats") -> None:
         """Passe les actions hébergées en espace normalisé (une fois, sur place).
 
@@ -266,6 +285,41 @@ def frameskip_pairs(data: dict, k: int) -> dict:
     out["recipe_idx"] = torch.zeros(len(first), dtype=torch.long)
     out["frameskip"] = k
     return out
+
+
+def rollout_chains(data: dict, idx: torch.Tensor, horizon: int) -> torch.Tensor:
+    """
+    Séquences de `horizon` paires consécutives, pour le rollout multi-step.
+
+    La paire suivante d'une paire est celle qui part de sa frame d'arrivée
+    (idx_t[suivante] == idx_t1[paire]) : même épisode, même pas de temps
+    (frameskip compris), sans avoir à connaître le pas. Seules les paires de
+    `idx` non augmentées sont chaînées (les images d'une paire augmentée lui
+    sont propres) ; une séquence ne sort donc jamais de `idx` (train ou val).
+
+    Returns:
+        (M, horizon) lignes de paires — une séquence par paire de départ
+        qui a encore horizon − 1 paires après elle dans son épisode.
+    """
+    if "z_wrist" not in data:
+        raise ValueError("Rollout multi-step : format v2 (tables de frames) requis")
+    idx = torch.as_tensor(idx).long().flatten()
+    is_aug = data.get("is_augmented")
+    if is_aug is not None:
+        idx = idx[~torch.as_tensor(is_aug).flatten().bool()[idx]]
+    idx_t = torch.as_tensor(data["idx_t"]).long()
+    idx_t1 = torch.as_tensor(data["idx_t1"]).long()
+    n_rows = int(max(idx_t.max(), idx_t1.max())) + 1 if len(idx_t) else 0
+    starting_at = torch.full((n_rows,), -1, dtype=torch.long)
+    starting_at[idx_t[idx]] = idx                      # frame → paire qui en part
+    nxt = torch.full((len(idx_t),), -1, dtype=torch.long)
+    nxt[idx] = starting_at[idx_t1[idx]]
+    cols = [idx]
+    for _ in range(horizon - 1):
+        prev = cols[-1]
+        cols.append(torch.where(prev >= 0, nxt[prev.clamp(min=0)], prev))
+    chains = torch.stack(cols, dim=1)
+    return chains[(chains >= 0).all(dim=1)]
 
 
 ACTION_MODES = ("absolute", "delta")

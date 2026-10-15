@@ -5,15 +5,21 @@ Pour régler le CEM (horizon, nb de candidats, itérations, coût), 06 ne suffit
 pas : il planifie une seule paire d'images. Ici, sur des points de départ
 tirés dans les épisodes de validation (jamais vus par 04) :
 
-    état courant = frame t, goal = frame t+H (même épisode), H = --horizon
+    état courant = frame t, goal = frame t+G (même épisode), G = --goal-steps
+    (défaut : H = --horizon)
     → CEM planifie H actions, comparées aux H actions réellement jouées
-      dans la démo entre t et t+H.
+      dans la démo à partir de t.
+    G > H : goal plus loin que l'horizon, comme sur le robot (goal = fin de
+    la tâche) : seul mae_first compte alors (l'action que le MPC exécute).
 
 Métriques (espace normalisé, 1.0 = un écart-type de l'articulation) :
     mae_first : |action planifiée[0] - action démo[t]|     (celle que le MPC exécute)
     mae_seq   : même chose moyennée sur les H pas
     *_ratio   : divisé par la baseline « action moyenne du dataset » (= 0 en
                 espace normalisé) — < 1 : le planner fait mieux que rien
+    *_ci95      : intervalle de confiance à 95 % des ratios (bootstrap sur
+                  les départs) — deux réglages dont les intervalles se
+                  recouvrent ne sont pas départagés
     ms_per_plan : latence d'un plan complet
 
 Tourne depuis les latents pré-encodés (sortie de 02) : ni encodeur, ni vidéo.
@@ -53,7 +59,9 @@ def plan_starts(data: dict, val_idx: torch.Tensor, horizon: int, stride: int = 1
     """
     Points de départ valides : les paires t, t+s, ..., t+(H-1)·s existent toutes
     dans le même épisode de validation (actions de la démo + goal = frame
-    t+H·s), s = frameskip du predictor.
+    t+H·s), s = frameskip du predictor. Avec un goal à G > H pas, passer
+    horizon = max(H, G) : les H premières lignes donnent les actions, la
+    G-ième le goal.
 
     Returns:
         liste de listes de H lignes de paires (dans les latents)
@@ -80,6 +88,10 @@ def main():
                         default="results/checkpoints/predictor_simu.pt")
     parser.add_argument("--horizon", type=int, default=10,
                         help="Pas planifiés ; le goal est la frame t+horizon×frameskip")
+    parser.add_argument("--goal-steps", type=int, default=None,
+                        help="Goal = frame t + goal_steps × frameskip (défaut : "
+                             "--horizon). Plus grand que l'horizon : goal lointain, "
+                             "comme sur le robot.")
     parser.add_argument("--n-samples", type=int, default=1000)
     parser.add_argument("--n-elites", type=int, default=None,
                         help="Défaut : 10 %% de --n-samples")
@@ -114,9 +126,11 @@ def main():
                           verbose=False)
     latents.normalize_actions(stats)
 
-    starts = plan_starts(data, val_idx, args.horizon, stride=frameskip)
+    goal_steps = args.goal_steps or args.horizon
+    starts = plan_starts(data, val_idx, max(args.horizon, goal_steps), stride=frameskip)
     if not starts:
-        sys.exit(f"[ERREUR] Aucun point de départ avec {args.horizon} pas dans les épisodes de val.")
+        sys.exit(f"[ERREUR] Aucun point de départ avec {max(args.horizon, goal_steps)} pas "
+                 "dans les épisodes de val.")
     g = torch.Generator().manual_seed(cfg["seed"])
     pick = torch.randperm(len(starts), generator=g)[:args.n_starts].sort().values
     starts = [starts[i] for i in pick.tolist()]
@@ -130,7 +144,8 @@ def main():
         cost_type=args.cost, precision=args.precision or hw["precision"],
         rollout_chunk=args.rollout_chunk))
 
-    name = f"cem-H{args.horizon}-N{args.n_samples}-it{args.n_iter}-{args.cost}"
+    name = (f"cem-H{args.horizon}-N{args.n_samples}-it{args.n_iter}-{args.cost}"
+            + (f"-G{goal_steps}" if goal_steps != args.horizon else ""))
     print(f"[Eval CEM] {name} — {len(starts)} départs (épisodes de val), "
           f"checkpoint {Path(args.predictor_ckpt).name}")
 
@@ -140,9 +155,11 @@ def main():
     for rows in starts:
         idx = torch.tensor(rows)
         zw_t, zg_t, zw_t1, zg_t1, act = latents.fetch(idx)
+        act = act[:args.horizon]                            # actions de la démo
+        g = goal_steps - 1
         with torch.no_grad():
             z_current = fusion(zw_t[:1], zg_t[:1])[0]
-            z_goal = fusion(zw_t1[-1:], zg_t1[-1:])[0]      # frame t+H
+            z_goal = fusion(zw_t1[g:g + 1], zg_t1[g:g + 1])[0]      # frame t+G
         if device == "cuda":
             torch.cuda.synchronize()
         t0 = time.time()
@@ -161,15 +178,26 @@ def main():
     def mean(x):
         return sum(x) / len(x)
 
+    def ci95(num, den, n_boot=2000):
+        """IC 95 % de mean(num)/mean(den), bootstrap sur les départs."""
+        num, den = torch.tensor(num), torch.tensor(den)
+        gen = torch.Generator().manual_seed(0)
+        pick = torch.randint(0, len(num), (n_boot, len(num)), generator=gen)
+        ratios = num[pick].mean(1) / den[pick].mean(1)
+        return [float(ratios.quantile(0.025)), float(ratios.quantile(0.975))]
+
     result = {
         "name": name,
-        "horizon": args.horizon, "frameskip": frameskip, "n_samples": args.n_samples,
+        "horizon": args.horizon, "goal_steps": goal_steps,
+        "frameskip": frameskip, "n_samples": args.n_samples,
         "n_elites": planner.config.n_elites, "n_iter": args.n_iter,
         "cost": args.cost, "initial_std": args.initial_std,
         "n_starts": len(starts),
         "mae_first": mean(mae_first), "mae_seq": mean(mae_seq),
         "mae_first_ratio": mean(mae_first) / mean(base_first),
         "mae_seq_ratio": mean(mae_seq) / mean(base_seq),
+        "mae_first_ratio_ci95": ci95(mae_first, base_first),
+        "mae_seq_ratio_ci95": ci95(mae_seq, base_seq),
         "mae_first_deg": mean(deg_first),
         "final_cost": mean(costs),
         "ms_per_plan": mean(latencies),
@@ -181,7 +209,8 @@ def main():
         json.dump(result, f, indent=2)
 
     print(f"[Eval CEM] MAE 1er pas {result['mae_first']:.3f} "
-          f"(ratio vs action moyenne {result['mae_first_ratio']:.3f}, "
+          f"(ratio vs action moyenne {result['mae_first_ratio']:.3f}, IC 95 % "
+          f"{result['mae_first_ratio_ci95'][0]:.3f}–{result['mae_first_ratio_ci95'][1]:.3f}, "
           f"~{result['mae_first_deg']:.1f}°)  séquence {result['mae_seq']:.3f} "
           f"(ratio {result['mae_seq_ratio']:.3f})  "
           f"{result['ms_per_plan']:.0f} ms/plan  → {out}")

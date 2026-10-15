@@ -171,3 +171,14 @@ def test_frameskip_pairs_skip_k_frames_and_drop_augmented():
     assert out["frameskip"] == 3 and frameskip_pairs(data, 1) is data
     lat = LatentPairs(out, "cpu", "cpu", verbose=False)
     assert len(lat) == 3
+
+
+def test_episode_tasks_reads_task_index_column():
+    """02 --task-indices : tâche de chaque épisode, lue sans décoder de vidéo."""
+    datasets = pytest.importorskip("datasets")
+    ds = LeRobotPairsDataset.__new__(LeRobotPairsDataset)
+    ds.config = type("Cfg", (), {"dataset_id": "stub"})()
+    hf = datasets.Dataset.from_dict({"episode_index": [0, 0, 1, 1, 2],
+                                     "task_index": [3, 3, 1, 1, 0]})
+    ds._dataset = type("LeRobot", (), {"hf_dataset": hf})()
+    assert ds.episode_tasks() == {0: 3, 1: 1, 2: 0}

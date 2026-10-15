@@ -1,0 +1,62 @@
+# ═══════════════════════════════════════════════════════════════
+# Campagne c4_sim_objects — composition de la simu : épisodes avec objets.
+#
+# OctoEnSueur/so101_sim_wm (5 000 épisodes) : 30 % exploration libre
+# (task 2), 30 % atteinte de pose (task 1), 40 % avec objets — push and
+# disturb (0), undirected play (3), counterfactual interaction (4) et
+# play (5) pairs = 2 000 épisodes. c2/c3_sim tiraient 290 épisodes au
+# hasard parmi les 5 000 (~116 avec objets) ; la tâche réelle (canard)
+# est une manipulation d'objet.
+#
+# Ici : 290 épisodes tirés parmi les 2 000 avec objets — même volume que
+# c3_sim (VRAM), même fusion gelée (celle de c2), même recette 04 et LoRA
+# que le meilleur run de c3_sim. Seule la composition change.
+#
+# Lecture : ratio vs identité de C_lora sur la val réelle,
+#   contre 0,787 (c3_sim, même LoRA) et 0,752 (c3_real, réel seul).
+#   Sous 0,752 → la simu transfère quand sa composition correspond à la
+#   tâche. Puis le CEM (D_cem) contre celui de c3_sim.
+#
+# Prérequis :
+#   - real_data encodé (configs/campaign_c4_horizon.yaml l'encode) ;
+#   - poids de fusion de c2, extraits de c3_sim (hors git, à copier) :
+#     results/fusion_weights_sim/cross_attn_bd.pt
+# Durée (mesuré en c2/c3_sim sur la 4090) : 02 ≈ 10 min (290 épisodes),
+# 04 L4 ≈ 15 × 19,7 s ≈ 5 min, LoRA ≈ 20 × 13,8 s ≈ 5 min, CEM
+# 128 × 0,52 s × (4+8+4) ≈ 18 min.
+# ═══════════════════════════════════════════════════════════════
+
+name: c4_sim_objects
+config: configs/rtx4090.yaml
+encoded_data: results/encoded/sim_objects_encoded.pt
+encode_args: [--dataset-id, OctoEnSueur/so101_sim_wm, --task-indices, "0,3,4,5",
+              --max-episodes, 290, --no-augment]
+fusion: cross_attn_bd
+real_data: results/encoded/encoded_data.pt         # duck_dataset_v3
+
+stages:
+  - name: A_screen
+    script: "04"
+    epochs: 15
+    fixed:
+      batch_size: 64
+      residual: true
+      frameskip: 5
+      action_mode: delta
+      lr: 1.0e-4
+      n_layers: 4
+      weight_decay: 0.01
+      dropout: 0.1
+      fusion_ckpt: results/fusion_weights_sim/cross_attn_bd.pt
+
+  - name: C_lora
+    script: "05"
+    epochs: 20
+    requires: real_data
+    fixed: {batch_size: 32, action_stats: real, train_action_embed: true,
+            lr: 5.0e-4, lora_rank: 16, lora_alpha: 32}
+
+  - name: D_cem
+    script: "08"
+    fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
+    variants: [{horizon: 4}, {horizon: 8}, {horizon: 4, goal_steps: 20}]

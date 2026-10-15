@@ -5,8 +5,13 @@ Phase A du training :
     - Predictor entraîné from scratch ; fusion cross-cam GELÉE, reprise des
       poids entraînés par 03 (cf. --fusion-ckpt / --train-fusion)
     - Actions normalisées (z-score, stats du train sauvées dans le checkpoint)
-    - Loss : MSE one-step z_t → z_t+1 ; baseline « rien ne bouge »
-      (z_t+1 = z_t) loggée à chaque epoch : ratio < 1 = dynamique apprise
+    - Loss : MSE one-step z_t → z_t+1, ou multi-step (--rollout-horizon H) :
+      le predictor est déroulé sur H pas depuis ses propres prédictions
+      (comme dans le CEM) et pénalisé sur toute la trajectoire ;
+      baseline « rien ne bouge » (z_t+1 = z_t) loggée à chaque epoch :
+      ratio < 1 = dynamique apprise
+    - Val : one-step (val/loss) + rollout sur --val-horizon pas
+      (val/rollout_loss, erreur cumulée vue par le CEM)
     - Split train/val par épisode
     - Output : checkpoint predictor_simu.pt
 
@@ -22,6 +27,7 @@ Usage:
         [--encoded-data results/encoded/encoded_data.pt]
         [--fusion concat_view] [--n-epochs 30] [--batch-size 64] [--lr 1e-4]
         [--precision auto] [--data-device auto] [--compile]
+        [--rollout-horizon 4] [--val-horizon 8] [--select-on rollout]
 """
 
 import sys
@@ -41,7 +47,9 @@ from src.predictor import WorldModelPredictor, PredictorConfig
 from src.fusion import make_fusion
 from src.config import load_config, set_seed, log_environment, setup_hardware
 from src.data import split_train_val, describe_split
-from src.latents import LatentPairs, frameskip_pairs, load_encoded, train_action_stats
+from src.latents import (LatentPairs, frameskip_pairs, load_encoded, rollout_chains,
+                         train_action_stats)
+from src.losses import multi_step_mse
 from src.checkpoint import atomic_save
 from src.device import (resolve_amp_dtype, make_adamw,
                         maybe_compile, unwrap, autocast_ctx,
@@ -70,9 +78,22 @@ def main():
     parser.add_argument("--train-fusion", action="store_true",
                         help="Entraîne aussi la fusion (cible détachée). "
                              "Déconseillé : voir la note sur l'effondrement.")
-    parser.add_argument("--rollout-horizon", type=int, default=4,
-                        help="Longueur du rollout multi-step pendant le training "
-                             "(non utilisé pour l'instant : one-step)")
+    parser.add_argument("--rollout-horizon", type=int, default=1,
+                        help="Pas déroulés pendant le training (1 = one-step). "
+                             "H > 1 : le predictor repart de ses propres "
+                             "prédictions et la loss est la MSE moyenne des H "
+                             "pas (pas de frameskip frames chacun).")
+    parser.add_argument("--val-horizon", type=int, default=4,
+                        help="Pas du rollout de validation (val/rollout_*), "
+                             "en plus de la val one-step. 0 = désactivé.")
+    parser.add_argument("--select-on", default="one_step",
+                        choices=["one_step", "rollout"],
+                        help="Métrique de val qui choisit le meilleur checkpoint "
+                             "(et best_val_loss du résumé lu par la campagne).")
+    parser.add_argument("--no-grad-checkpoint", action="store_true",
+                        help="Garde les activations des H pas au lieu de les "
+                             "recalculer au backward (plus rapide, H fois la "
+                             "mémoire d'activations).")
     parser.add_argument("--n-epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -202,6 +223,31 @@ def main():
     print(f"Actions : mode {args.action_mode}")
     latents.normalize_actions(action_stats)
 
+    # Multi-step : une unité de training = H paires consécutives d'un épisode
+    # de train (séquences qui se chevauchent : une par paire de départ).
+    horizon = max(1, args.rollout_horizon)
+    grad_ckpt = horizon > 1 and not args.no_grad_checkpoint
+    train_units = (rollout_chains(data, train_idx, horizon) if horizon > 1
+                   else train_idx)
+    if horizon > 1:
+        print(f"Rollout train : {horizon} pas ({horizon * args.frameskip} frames), "
+              f"{len(train_units)} séquences"
+              f"{', gradient checkpointing' if grad_ckpt else ''}")
+        if len(train_units) == 0:
+            sys.exit(f"[ERREUR] Aucune séquence de {horizon} paires dans le train.")
+    val_horizon = args.val_horizon if latents.indexed else 0
+    if args.val_horizon > 0 and not latents.indexed:
+        print("[ATTENTION] Latents v1 : pas de rollout de validation.")
+    val_chains = (rollout_chains(data, val_idx, val_horizon) if val_horizon > 0
+                  else None)
+    if val_chains is not None:
+        print(f"Rollout val   : {val_horizon} pas, {len(val_chains)} séquences")
+        if len(val_chains) == 0:
+            val_chains = None
+    if args.select_on == "rollout" and val_chains is None:
+        sys.exit("[ERREUR] --select-on rollout sans séquences de validation "
+                 "(--val-horizon 0 ou épisodes trop courts).")
+
     # === Optimizer ===
     params = list(raw_predictor.parameters())
     if train_fusion:
@@ -229,6 +275,10 @@ def main():
             "predictor_params": raw_predictor.count_parameters(),
             "phase": "A_sim",
             "train_seed": seed,
+            "n_train_units": len(train_units),
+            "rollout_horizon": horizon,
+            "val_horizon": val_horizon,
+            "select_on": args.select_on,
         },
     )
 
@@ -237,6 +287,7 @@ def main():
     history = []
     best_val = float("inf")
     best_ratio = float("nan")
+    best_entry: dict = {}          # entrée d'history de l'epoch retenue
     global_step = 0
     start_epoch = 0
     run_clock = Stopwatch()
@@ -257,6 +308,7 @@ def main():
         start_epoch = state["epoch"] + 1
         global_step = state["global_step"]
         best_val, best_ratio = state["best_val"], state["best_ratio"]
+        best_entry = state.get("best_entry", {})
         history = state["history"]
         print(f"[Resume] reprise à l'epoch {start_epoch + 1}/{args.n_epochs} "
               f"(best val {best_val:.5f}) depuis {last_path.name}")
@@ -264,7 +316,7 @@ def main():
     for epoch in range(start_epoch, args.n_epochs):
         # Train
         fusion.train(train_fusion); predictor.train()
-        perm = train_idx[torch.randperm(len(train_idx))]
+        perm = train_units[torch.randperm(len(train_units))]
         train_losses = []
         grad_norms = []
         reset_peak_vram()
@@ -272,17 +324,28 @@ def main():
 
         for i in tqdm(range(0, len(perm), args.batch_size),
                       desc=f"Epoch {epoch + 1}/{args.n_epochs}"):
-            zw_t, zg_t, zw_t1, zg_t1, act = fetch(perm[i:i + args.batch_size])
-
-            with autocast_ctx(device, amp_dtype):
-                # Fusion cross-cam (cible toujours sans gradient)
-                with torch.set_grad_enabled(train_fusion):
-                    z_t = fusion(zw_t, zg_t)
-                with torch.no_grad():
-                    z_t1 = fusion(zw_t1, zg_t1)
-                # Prediction one-step (pour le moment ; multi-step demande des séquences)
-                pred = predictor(z_t, act)
-            loss = nn.functional.mse_loss(pred.float(), z_t1.float())
+            if horizon == 1:
+                zw_t, zg_t, zw_t1, zg_t1, act = fetch(perm[i:i + args.batch_size])
+                with autocast_ctx(device, amp_dtype):
+                    # Fusion cross-cam (cible toujours sans gradient)
+                    with torch.set_grad_enabled(train_fusion):
+                        z_t = fusion(zw_t, zg_t)
+                    with torch.no_grad():
+                        z_t1 = fusion(zw_t1, zg_t1)
+                    pred = predictor(z_t, act)
+                loss = nn.functional.mse_loss(pred.float(), z_t1.float())
+            else:
+                zw_0, zg_0, zw_h, zg_h, act = latents.fetch_chain(
+                    perm[i:i + args.batch_size])
+                with autocast_ctx(device, amp_dtype):
+                    with torch.set_grad_enabled(train_fusion):
+                        z_0 = fusion(zw_0, zg_0)
+                    with torch.no_grad():
+                        targets = fusion(zw_h.flatten(0, 1), zg_h.flatten(0, 1)
+                                         ).unflatten(0, act.shape[:2])
+                    # Rollout autorégressif : z_{t+h} prédit → entrée du pas h+1
+                    loss = multi_step_mse(predictor, z_0, act, targets,
+                                          grad_checkpoint=grad_ckpt)
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -317,25 +380,61 @@ def main():
                 id_losses.append(
                     nn.functional.mse_loss(z_t.float(), z_t1.float()).item())
 
+            # Rollout sur val_horizon pas, comme le CEM : MSE de chaque pas
+            # contre « rien ne bouge » au même pas (z_{t+h} = z_t).
+            roll_sum = id_sum = None
+            n_roll = 0
+            if val_chains is not None:
+                for i in range(0, len(val_chains), args.batch_size):
+                    zw_0, zg_0, zw_h, zg_h, act = latents.fetch_chain(
+                        val_chains[i:i + args.batch_size])
+                    with autocast_ctx(device, amp_dtype):
+                        z_0 = fusion(zw_0, zg_0)
+                        targets = fusion(zw_h.flatten(0, 1), zg_h.flatten(0, 1)
+                                         ).unflatten(0, act.shape[:2])
+                        steps = multi_step_mse(predictor, z_0, act, targets,
+                                               per_step=True)
+                    ident = ((targets.float() - z_0.float().unsqueeze(1)) ** 2
+                             ).mean(dim=(0, 2, 3))
+                    b = act.shape[0]
+                    roll_sum = steps * b if roll_sum is None else roll_sum + steps * b
+                    id_sum = ident * b if id_sum is None else id_sum + ident * b
+                    n_roll += b
+
         val_loss = sum(val_losses) / len(val_losses)
         # Baseline « rien ne bouge » (z_t+1 = z_t) : un predictor utile doit
         # passer nettement dessous (ratio < 1).
         id_loss = sum(id_losses) / len(id_losses)
         id_ratio = val_loss / id_loss if id_loss > 0 else float("nan")
+        roll = {}
+        if n_roll:
+            per_step = (roll_sum / n_roll).tolist()
+            per_step_id = (id_sum / n_roll).tolist()
+            r_loss, r_id = sum(per_step) / len(per_step), sum(per_step_id) / len(per_step_id)
+            roll = {"rollout_val": r_loss, "rollout_identity": r_id,
+                    "rollout_ratio": r_loss / r_id if r_id > 0 else float("nan"),
+                    "rollout_per_step": per_step,
+                    "rollout_ratio_per_step": [a / b if b > 0 else float("nan")
+                                               for a, b in zip(per_step, per_step_id)]}
         # Relevé avant scheduler.step(), sinon c'est le lr de l'epoch suivant.
         current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
         epoch_s = time.time() - t_epoch
         vram = peak_vram_gb() if device == "cuda" else 0.0
-        samples_per_s = len(train_idx) / epoch_s if epoch_s > 0 else 0.0
+        samples_per_s = len(train_units) / epoch_s if epoch_s > 0 else 0.0
 
         history.append({"epoch": epoch, "train": train_loss, "val": val_loss,
-                        "val_identity": id_loss,
+                        "val_identity": id_loss, "ratio": id_ratio, **roll,
                         "epoch_seconds": epoch_s, "peak_vram_gb": vram})
         print(f"  train={train_loss:.5f}  val={val_loss:.5f}  "
               f"(identité {id_loss:.5f}, ratio {id_ratio:.3f})  "
               f"lr={current_lr:.2e}  "
               f"[{epoch_s:.0f}s, {samples_per_s:.0f} éch/s, VRAM pic {vram:.1f} GB]")
+        if roll:
+            print(f"  rollout {val_horizon} pas : val={roll['rollout_val']:.5f} "
+                  f"(identité {roll['rollout_identity']:.5f}, ratio "
+                  f"{roll['rollout_ratio']:.3f}) — ratio par pas "
+                  + " ".join(f"{r:.3f}" for r in roll["rollout_ratio_per_step"]))
 
         run.log({
             "epoch": epoch,
@@ -349,12 +448,22 @@ def main():
             "perf/epoch_seconds": epoch_s,
             "perf/samples_per_s": samples_per_s,
             "perf/gpu_peak_gb": vram if device == "cuda" else None,
+            **({"val/rollout_loss": roll["rollout_val"],
+                "val/rollout_identity_mse": roll["rollout_identity"],
+                "val/rollout_ratio_vs_identity": roll["rollout_ratio"],
+                "val/rollout_ratio_last_step": roll["rollout_ratio_per_step"][-1]}
+               if roll else {}),
         }, step=global_step)
 
-        # Save best
-        if val_loss < best_val:
-            best_val = val_loss
-            best_ratio = id_ratio
+        # Save best (sur la métrique choisie par --select-on)
+        if args.select_on == "rollout":
+            sel_loss, sel_ratio = roll["rollout_val"], roll["rollout_ratio"]
+        else:
+            sel_loss, sel_ratio = val_loss, id_ratio
+        if sel_loss < best_val:
+            best_val = sel_loss
+            best_ratio = sel_ratio
+            best_entry = history[-1]
             atomic_save({
                 "predictor_state_dict": unwrap(raw_predictor).state_dict(),
                 "fusion_state_dict":    fusion.state_dict(),
@@ -364,6 +473,8 @@ def main():
                 "action_dim":           action_dim,
                 "action_stats":         action_stats.to_dict(),
                 "frameskip":            args.frameskip,
+                "rollout_horizon":      horizon,
+                "select_on":            args.select_on,
                 "epoch":                epoch,
                 "val_loss":             val_loss,
                 "val_identity":         id_loss,
@@ -372,7 +483,7 @@ def main():
             print(f"  [Best val, saved to {out_path.name}]")
             run.log_artifact(
                 out_path, name="predictor_simu", artifact_type="model",
-                metadata={"epoch": epoch, "val_loss": val_loss,
+                metadata={"epoch": epoch, "val_loss": val_loss, **roll,
                           "fusion": args.fusion, "embed_dim": embed_dim},
             )
 
@@ -388,18 +499,28 @@ def main():
             "global_step":          global_step,
             "best_val":             best_val,
             "best_ratio":           best_ratio,
+            "best_entry":           best_entry,
             "history":              history,
         }, last_path)
 
     total_seconds = run_clock.elapsed
     epoch_seconds = [h["epoch_seconds"] for h in history]
-    vals = [h["val"] for h in history]
+    vals = [h["rollout_val" if args.select_on == "rollout" else "val"] for h in history]
     # Résumé lu par scripts/campaign.py (run terminé, temps d'epoch mesuré).
     with open(done_path, "w") as f:
         json.dump({
             "best_val_loss": best_val,
             "best_ratio_vs_identity": best_ratio,
             "val_identity": history[-1]["val_identity"] if history else None,
+            # best_* = métrique de --select-on ; les deux vues à l'epoch retenue :
+            "select_on": args.select_on,
+            "rollout_horizon": horizon,
+            "val_horizon": val_horizon,
+            "one_step_val": best_entry.get("val"),
+            "one_step_ratio": best_entry.get("ratio"),
+            "rollout_val": best_entry.get("rollout_val"),
+            "rollout_ratio": best_entry.get("rollout_ratio"),
+            "rollout_ratio_per_step": best_entry.get("rollout_ratio_per_step"),
             "epochs": args.n_epochs,
             "seed": seed,
             "best_epoch": vals.index(min(vals)) if vals else None,
@@ -421,7 +542,11 @@ def main():
     run.finish()
 
     print(f"\n=== Training terminé ===")
-    print(f"Best val loss : {best_val:.5f}  (ratio vs identité : {best_ratio:.3f})")
+    print(f"Best val loss : {best_val:.5f}  (ratio vs identité : {best_ratio:.3f}, "
+          f"sélection {args.select_on})")
+    if best_entry.get("rollout_ratio") is not None:
+        print(f"  à cette epoch : one-step ratio {best_entry['ratio']:.3f}, rollout "
+              f"{val_horizon} pas ratio {best_entry['rollout_ratio']:.3f}")
     if not best_ratio < 1.0:
         print("[ATTENTION] Le predictor ne bat pas la baseline « rien ne bouge » "
               "(z_t+1 = z_t) : il n'a pas appris la dynamique.")

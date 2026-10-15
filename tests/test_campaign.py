@@ -102,3 +102,43 @@ def test_plan_starts_stride_follows_frameskip():
     data = {"episode_idx": torch.zeros(6, dtype=torch.long), "frame_idx": torch.tensor(frames)}
     starts = eval_planner.plan_starts(data, torch.arange(6), horizon=3, stride=2)
     assert [[frames[r] for r in s] for s in starts] == [[0, 2, 4], [2, 4, 6]]
+
+
+def _campaign_from(path):
+    return campaign.Campaign(ROOT / path, dry_run=True)
+
+
+def test_cem_stage_on_given_checkpoint_and_on_each_run(tmp_path):
+    c = _campaign_from("configs/campaign_c4_horizon.yaml")
+    stage = c.spec["stages"][0]
+    plans = []
+    c.command = lambda stage, params, run_dir, fusion, ckpt, name: (
+        plans.append(ckpt) or (run_dir / "never.json", []))
+    c.run_stage(stage, "cross_attn_bd", None)
+    assert plans == [stage["predictor_ckpt"]] * 6
+
+    c = _campaign_from("configs/campaign_c4_multistep.yaml")
+    c.dir = tmp_path
+    a, d = c.spec["stages"]
+    c.results["A_rollout"] = [
+        {"name": f"RH{h}", "dir": str(tmp_path / f"RH{h}"), "params": {},
+         "result": {"best_val_loss": 0.1, "best_ratio_vs_identity": 0.8}} for h in (1, 4)]
+    plans = []
+    c.command = lambda stage, params, run_dir, fusion, ckpt, name: (
+        plans.append((name, ckpt)) or (run_dir / "never.json", []))
+    c.run_stage(d, "cross_attn_bd", "<best>")
+    assert [n for n, _ in plans] == [
+        f"RH{h}/it3-N1000-cosine-{v}" for h in (1, 4) for v in ("H4", "H8", "H4-G20")]
+    assert plans[3][1] == str(tmp_path / "RH4" / "predictor.pt")
+
+
+def test_epoch_time_is_keyed_by_layers_and_rollout_horizon():
+    c = campaign.Campaign.__new__(campaign.Campaign)
+    c.epoch_seconds = {}
+    c.record_timing({"n_layers": 6, "rollout_horizon": 1}, {"epoch_seconds_mean": 10.0})
+    assert c.t_epoch({"n_layers": 6}) == (10.0, True)
+    assert c.t_epoch({"n_layers": 6, "rollout_horizon": 4}) == (40.0, False)
+    c.record_timing({"n_layers": 6, "rollout_horizon": 4}, {"epoch_seconds_mean": 52.0})
+    assert c.t_epoch({"n_layers": 6, "rollout_horizon": 4}) == (52.0, True)
+    assert campaign.run_name({"lr": 1e-4, "rollout_horizon": 4}) == "lr0.0001-RH4"
+    assert campaign.Campaign.flags({"select_on": "rollout"}) == ["--select-on", "rollout"]

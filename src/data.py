@@ -186,6 +186,15 @@ class LeRobotPairsDataset(Dataset):
         """Épisode de la paire `idx`."""
         return self._pairs_index[idx][0]
 
+    def episode_tasks(self) -> Dict[int, int]:
+        """task_index de chaque épisode (colonne du dataset LeRobot, sans vidéo)."""
+        hf = self._dataset.hf_dataset.with_format(None)
+        if "task_index" not in hf.column_names:
+            raise ValueError(f"{self.config.dataset_id} : pas de colonne task_index")
+        episodes = hf["episode_index"][:]
+        tasks = hf["task_index"][:]
+        return {int(e): int(t) for e, t in zip(episodes, tasks)}
+
     def pair_frame(self, idx: int) -> int:
         """Index global de la frame t de la paire `idx`."""
         return self._pairs_index[idx][1]

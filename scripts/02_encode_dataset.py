@@ -77,6 +77,10 @@ def main():
                              "config) : frames consécutives conservées (08) et "
                              "toutes les tâches représentées. Pour un gros dataset "
                              "(simulation) dont les latents ne tiendraient pas en VRAM.")
+    parser.add_argument("--task-indices", default=None,
+                        help="Ne garde que les épisodes de ces tâches (task_index "
+                             "du dataset LeRobot, ex. 0,3,4,5), avant --max-episodes. "
+                             "Pour tester la composition d'un dataset de simulation.")
     parser.add_argument("--aug-passes", type=int, default=None,
                         help="Passes AUGMENTÉES en plus de la passe propre. "
                              "Chaque passe re-tire des paramètres au hasard, "
@@ -155,12 +159,20 @@ def main():
     )
     base_dataset = LeRobotPairsDataset(data_cfg)
     dataset = base_dataset
-    if args.max_episodes is not None:
+    if args.max_episodes is not None or args.task_indices:
         episodes = sorted({base_dataset.pair_episode(i) for i in range(len(base_dataset))})
-        if args.max_episodes < len(episodes):
+        n_all = len(episodes)
+        if args.task_indices:
+            wanted = {int(t) for t in str(args.task_indices).split(",") if t.strip()}
+            task_of = base_dataset.episode_tasks()
+            episodes = [e for e in episodes if task_of.get(e) in wanted]
+            print(f"[TASKS] tâches {sorted(wanted)} : {len(episodes)} épisodes sur {n_all}")
+        keep = set(episodes)
+        if args.max_episodes is not None and args.max_episodes < len(episodes):
             g = torch.Generator().manual_seed(cfg["seed"])
             keep = {episodes[j] for j in
                     torch.randperm(len(episodes), generator=g)[:args.max_episodes].tolist()}
+        if len(keep) < n_all:
             dataset = Subset(base_dataset, [i for i in range(len(base_dataset))
                                             if base_dataset.pair_episode(i) in keep])
             print(f"[MAX-EPISODES] {len(keep)} épisodes sur {len(episodes)} "
@@ -293,6 +305,7 @@ def main():
             "encoder_size": cfg["encoder"]["size"],
             "encoder_dtype": str(encoder.dtype_).replace("torch.", ""),
             "dataset_id":   cfg["dataset"]["hf_id"],
+            "task_indices": args.task_indices,
             "seed":         cfg["seed"],
         },
         output_path,

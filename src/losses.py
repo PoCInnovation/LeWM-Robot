@@ -16,6 +16,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 
 def one_step_mse(predicted: torch.Tensor, target: torch.Tensor,
@@ -47,9 +48,16 @@ def multi_step_mse(predictor: nn.Module,
                     z_start: torch.Tensor,
                     actions: torch.Tensor,
                     targets: torch.Tensor,
-                    teacher_forcing: bool = False) -> torch.Tensor:
+                    teacher_forcing: bool = False,
+                    grad_checkpoint: bool = False,
+                    per_step: bool = False) -> torch.Tensor:
     """
     Loss MSE multi-step : déroule le predictor sur T steps et compare à la séquence cible.
+
+    Le CEM déroule le predictor sur H pas à partir de ses propres prédictions :
+    entraîné en one-step, il n'a jamais vu ses erreurs en entrée, et elles
+    s'accumulent. En autorégressif, le gradient traverse tout le rollout
+    (z_{t+1} prédit sert d'entrée au pas suivant).
 
     Args:
         z_start : (B, N, D) latent au temps 0
@@ -58,14 +66,23 @@ def multi_step_mse(predictor: nn.Module,
         teacher_forcing : si True, utilise les targets comme input pour l'étape suivante
                           (évite l'accumulation d'erreur)
                           si False, autorégressif (plus dur, plus réaliste)
+        grad_checkpoint : recalcule les activations de chaque pas au backward
+                          au lieu de les garder : mémoire ≈ celle d'un seul pas
+                          (au lieu de T fois), pour ~1/3 de calcul en plus
+        per_step        : renvoie la loss de chaque pas (T,) au lieu de la moyenne
+
+    Losses calculées en fp32 (prédictions sous autocast bf16).
     """
     T = actions.shape[1]
     losses = []
     z = z_start
 
     for t in range(T):
-        pred = predictor(z, actions[:, t, :])
-        losses.append(F.mse_loss(pred, targets[:, t]))
+        if grad_checkpoint and torch.is_grad_enabled():
+            pred = checkpoint(predictor, z, actions[:, t, :], use_reentrant=False)
+        else:
+            pred = predictor(z, actions[:, t, :])
+        losses.append(F.mse_loss(pred.float(), targets[:, t].float()))
 
         # Autorégressif vs teacher forcing
         if teacher_forcing:
@@ -73,7 +90,8 @@ def multi_step_mse(predictor: nn.Module,
         else:
             z = pred
 
-    return torch.stack(losses).mean()
+    losses = torch.stack(losses)
+    return losses if per_step else losses.mean()
 
 
 def multi_step_combined(predictor: nn.Module,

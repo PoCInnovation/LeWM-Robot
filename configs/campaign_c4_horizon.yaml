@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════════════
+# Campagne c4_horizon — balayage d'horizon du CEM, sans réentraîner.
+#
+# c3 n'a testé que H = 2 et 4 pas (10 et 20 frames). c2 (t → t+1) fait
+# mieux que l'action moyenne à H = 10 frames (ratio 1er pas 0,974) alors
+# que c3_sim à H = 2 pas (même durée réelle : 10 frames) fait 1,277. Si un
+# horizon plus long passe sous 1, l'optimum existait ; sinon, c'est le mode
+# delta ou la taille du modèle qui dégrade.
+#
+# N = 1000 et 3 itérations : sur les 32 réglages CEM de c1/c2, N = 1000
+# bat toujours 300 et 5 itérations font toujours pire que 3.
+# H = 4 refait le réglage de c3 : contrôle que les latents réencodés
+# redonnent les mêmes chiffres (c3_real 1,123 / c3_sim 1,119 au 1er pas,
+# à l'IC près : 128 départs ici contre 64).
+# H = 4, G = 20 : goal 100 frames plus loin que l'horizon, comme sur le
+# robot (goal = fin de la tâche) — seul le 1er pas compte.
+# 128 départs : 08 donne maintenant l'IC 95 % des ratios ; à 64 départs,
+# les écarts de c1–c3 (0,97 contre 1,0) étaient probablement dans le bruit.
+#
+# Checkpoints de c3 (hors git, à copier sur la machine) :
+#   results/campaign/c3_real/best_predictor.pt
+#   results/campaign/c3_sim/best_predictor_real.pt
+#
+# Durée (mesuré en c3 sur la 4090 : ~520 ms par pas d'horizon et par plan,
+# N = 1000) : 128 départs × 0,52 s × (4+6+8+10+12+4) pas ≈ 49 min par
+# checkpoint, + ~1 min de chargement par run.
+# ═══════════════════════════════════════════════════════════════
+
+name: c4_horizon
+config: configs/rtx4090.yaml
+encoded_data: results/encoded/encoded_data.pt     # duck_dataset_v3
+# Passe propre seule (5,3 GB au lieu de 15,8) : avec frameskip 5, les lignes
+# augmentées sont écartées de toute façon (frameskip_pairs) ; mêmes épisodes
+# de val (split par épisode, même seed).
+encode_args: [--no-augment]
+fusion: cross_attn_bd
+real_data: null
+
+stages:
+  - name: D_real
+    script: "08"
+    predictor_ckpt: results/campaign/c3_real/best_predictor.pt
+    fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
+    variants: [{horizon: 4}, {horizon: 6}, {horizon: 8}, {horizon: 10}, {horizon: 12},
+               {horizon: 4, goal_steps: 20}]
+
+  - name: D_sim_lora
+    script: "08"
+    predictor_ckpt: results/campaign/c3_sim/best_predictor_real.pt
+    fixed: {n_starts: 128, rollout_chunk: 500, n_iter: 3, n_samples: 1000, cost: cosine}
+    variants: [{horizon: 4}, {horizon: 6}, {horizon: 8}, {horizon: 10}, {horizon: 12},
+               {horizon: 4, goal_steps: 20}]
