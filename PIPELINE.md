@@ -32,6 +32,7 @@ dans l'espace latent.
 │   ├── planner.py             CEM planner (autocast bf16, rollouts par chunks) + MPC controller
 │   ├── latents.py             Format des latents (frames uniques, bf16), split, normalisation des actions
 │   ├── checkpoint.py          Sauvegarde atomique + rechargement predictor/fusion/LoRA
+│   ├── control.py             Boucle MPC robot (caméras → latent → CEM → cible bornée), robot simulé
 │   └── tracking.py            Suivi W&B (optionnel)
 ├── scripts/
 │   ├── 00_check_gpu.py              Vérifie runtime Blackwell et kernels SDPA/backward/AdamW
@@ -42,7 +43,8 @@ dans l'espace latent.
 │   ├── 05_train_lora.py             Train LoRA sur démos réelles (M4)
 │   ├── 06_inference_demo.py         Démo end-to-end avec CEM planner (M5)
 │   ├── 07_benchmark.py              Mini-trains chronométrés → estimation du temps d'un run complet
-│   ├── 08_eval_planner.py           Évaluation hors ligne du CEM sur les épisodes de validation
+│   ├── 08_eval_planner.py           Évaluation hors ligne du CEM sur les épisodes de validation (IC 95 %, goal lointain)
+│   ├── 09_robot_mpc.py              Pilote le SO-101 réel (MPC vers une image-goal) ; à blanc sans --execute
 │   └── campaign.py                  Campagne sans surveillance (sweeps 04, LoRA, CEM), reprise après coupure
 ├── results/                   Outputs (encoded data, checkpoints, plots, runs W&B)
 ├── tests/                     pytest : adaptation GPU (CPU-only + 4 tests GPU) + suivi W&B

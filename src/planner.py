@@ -81,7 +81,8 @@ class CEMPlanner:
 
     @torch.no_grad()
     def plan(self, z_current: torch.Tensor, z_goal: torch.Tensor,
-             return_diagnostics: bool = False) -> torch.Tensor:
+             return_diagnostics: bool = False,
+             init_mean: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Trouve la séquence d'actions optimale.
 
@@ -90,6 +91,8 @@ class CEMPlanner:
                         (ou (1, N, D), sera squeezé si batch_size=1)
             z_goal    : (N, D) latent fusionné de l'image-goal
             return_diagnostics : si True, renvoie aussi les coûts et stats
+            init_mean : (horizon, action_dim) moyenne initiale (warm start
+                        MPC : plan précédent décalé d'un pas) ; None = 0
 
         Returns:
             actions : (horizon, action_dim) séquence d'actions optimales
@@ -113,7 +116,9 @@ class CEMPlanner:
                                device=device).expand(cfg.action_dim)
 
         # Init distribution
-        mean = torch.zeros(cfg.horizon, cfg.action_dim, device=device)
+        mean = (torch.zeros(cfg.horizon, cfg.action_dim, device=device)
+                if init_mean is None else
+                init_mean.to(device=device, dtype=torch.float32).clone())
         std = torch.ones(cfg.horizon, cfg.action_dim, device=device) * cfg.initial_std
 
         history = {"mean": [], "std": [], "best_cost": []}
@@ -198,6 +203,15 @@ class CEMPlanner:
             raise ValueError(f"Unknown cost_type: {self.config.cost_type}")
 
 
+def shift_plan(plan: Optional[torch.Tensor], steps: int = 1) -> Optional[torch.Tensor]:
+    """Plan décalé de `steps` pas (déjà exécutés), complété par des zéros
+    (= action moyenne du dataset en espace normalisé)."""
+    if plan is None:
+        return None
+    steps = min(steps, plan.shape[0])
+    return torch.cat([plan[steps:], torch.zeros_like(plan[:steps])])
+
+
 class MPCController:
     """
     Wrapper Model Predictive Control autour du CEM planner.
@@ -230,8 +244,9 @@ class MPCController:
             action : (action_dim,)
         """
         if self.step_count % self.replan_every == 0:
-            # Replanifier
-            self._cached_plan = self.planner.plan(z_current, z_goal)
+            # Replanifier, en repartant du plan précédent décalé (warm start)
+            self._cached_plan = self.planner.plan(
+                z_current, z_goal, init_mean=shift_plan(self._cached_plan, self.replan_every))
             action_idx = 0
         else:
             action_idx = self.step_count % self.replan_every

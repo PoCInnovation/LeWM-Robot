@@ -25,6 +25,10 @@ huggingface-hub>=1.0,<2
 # Ou décommenter la ligne suivante (peut casser selon les versions de torch) :
 # lerobot @ git+https://github.com/huggingface/lerobot.git
 
+# PC du robot seulement (scripts/09_robot_mpc.py) : SDK des servos Feetech du
+# SO-101, que lerobot importe à la création du bras :
+#   pip install feetech-servo-sdk        (ou pip install "lerobot[feetech]")
+
 # Vidéo decoding (lerobot 0.5.2 demande pyav < 17)
 av>=15,<17
 
