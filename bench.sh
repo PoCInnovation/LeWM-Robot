@@ -79,7 +79,7 @@ else
     "$PYTHON" -m pip install --upgrade pip -q
     "$PYTHON" -m pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url "$CUDA_INDEX"
     "$PYTHON" -m pip install -r requirements_wm.txt
-    "$PYTHON" -m pip install "lerobot>=0.5" -c requirements_wm.txt
+    "$PYTHON" -m pip install "lerobot==0.5.1" -c requirements_wm.txt
     mkdir -p "$VENV"
     echo "$WANT" > "$STAMP"
 fi

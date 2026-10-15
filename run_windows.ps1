@@ -82,7 +82,7 @@ if (-not $alreadyInstalled) {
     if ($LASTEXITCODE -ne 0) { throw "Installation de PyTorch CUDA échouée." }
     & $script:Python -m pip install -r requirements_wm.txt
     if ($LASTEXITCODE -ne 0) { throw "Installation des dépendances échouée." }
-    & $script:Python -m pip install "lerobot>=0.5" -c requirements_wm.txt
+    & $script:Python -m pip install "lerobot==0.5.1" -c requirements_wm.txt
     if ($LASTEXITCODE -ne 0) { throw "Installation de LeRobot échouée." }
     Set-Content -Path $installStamp -Value $wantedStamp
 }

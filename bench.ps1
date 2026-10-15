@@ -68,7 +68,7 @@ if (-not $alreadyInstalled) {
     & $python -m pip install --upgrade pip
     & $python -m pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url $cudaIndex
     & $python -m pip install -r requirements_wm.txt
-    & $python -m pip install "lerobot>=0.5" -c requirements_wm.txt
+    & $python -m pip install "lerobot==0.5.1" -c requirements_wm.txt
     Set-Content -Path $installStamp -Value $wantedStamp
 }
 

@@ -43,7 +43,9 @@ L’installation fixe le couple officiel **torch 2.10.0 / torchvision 0.25.0**
 sur l’index CUDA 12.8. Transformers est en 5.x : lerobot >= 0.5 impose
 huggingface-hub >= 1.0, que transformers 4.x refuse à l’import.
 Les contraintes sont aussi appliquées à l’installation de LeRobot pour éviter
-qu’elle remplace ce couple. Un conflit de dépendances doit être résolu avant
+qu’elle remplace ce couple.
+LeRobot est figé en 0.5.1, la version validée : `lerobot>=0.5` installait
+la 0.6.1 (octobre 2026), jamais testée avec ce code. Un conflit de dépendances doit être résolu avant
 le lancement du pipeline.
 
 Installation manuelle équivalente :
@@ -54,7 +56,7 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url https://download.pytorch.org/whl/cu128
 python -m pip install -r requirements_wm.txt
-python -m pip install 'lerobot>=0.5' -c requirements_wm.txt
+python -m pip install 'lerobot==0.5.1' -c requirements_wm.txt
 python scripts/00_check_gpu.py --require-cuda
 ```
 

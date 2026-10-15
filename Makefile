@@ -47,7 +47,7 @@ install: venv
 	$(VENV)/bin/python -m pip install --upgrade pip
 	$(VENV)/bin/python -m pip install --upgrade --force-reinstall torch==2.10.0 torchvision==0.25.0 --index-url $(CUDA_INDEX)
 	$(VENV)/bin/python -m pip install -r requirements_wm.txt
-	$(VENV)/bin/python -m pip install "lerobot>=0.5" -c requirements_wm.txt
+	$(VENV)/bin/python -m pip install "lerobot==0.5.1" -c requirements_wm.txt
 	$(VENV)/bin/python scripts/00_check_gpu.py --config $(CONFIG)
 	@echo "→ hf auth login (DINOv3 gated), puis : make bench"
 
